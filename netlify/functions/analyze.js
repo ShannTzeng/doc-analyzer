@@ -1,4 +1,3 @@
-const Anthropic = require('@anthropic-ai/sdk');
 const mammoth = require('mammoth');
 
 const ANALYSIS_PROMPT = `請仔細分析這份文件/圖片的內容，提取真正有價值的重點。
@@ -12,17 +11,15 @@ const ANALYSIS_PROMPT = `請仔細分析這份文件/圖片的內容，提取真
 請以下列 JSON 格式回覆，不要加其他說明文字：
 {"points": ["重點1", "重點2", ...]}`;
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      },
-      body: '',
-    };
+    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
   }
 
   if (event.httpMethod !== 'POST') {
@@ -35,31 +32,23 @@ exports.handler = async (event) => {
     if (!fileData || !mimeType) {
       return {
         statusCode: 400,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: '缺少必要的檔案資料' }),
       };
     }
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     let messageContent = [];
 
     if (mimeType.startsWith('image/')) {
-      const supportedImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      const effectiveMime = supportedImageTypes.includes(mimeType) ? mimeType : 'image/jpeg';
-
+      const supported = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      const effectiveMime = supported.includes(mimeType) ? mimeType : 'image/jpeg';
       messageContent = [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: effectiveMime, data: fileData },
-        },
+        { type: 'image', source: { type: 'base64', media_type: effectiveMime, data: fileData } },
         { type: 'text', text: ANALYSIS_PROMPT },
       ];
     } else if (mimeType === 'application/pdf') {
       messageContent = [
-        {
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: fileData },
-        },
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } },
         { type: 'text', text: ANALYSIS_PROMPT },
       ];
     } else if (
@@ -74,6 +63,7 @@ exports.handler = async (event) => {
       if (!text) {
         return {
           statusCode: 400,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           body: JSON.stringify({ error: 'Word 文件內容為空或無法讀取' }),
         };
       }
@@ -87,22 +77,52 @@ exports.handler = async (event) => {
     } else {
       return {
         statusCode: 400,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: `不支援的檔案類型：${mimeType}` }),
       };
     }
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: messageContent }],
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return {
+        statusCode: 500,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: '伺服器未設定 API Key' }),
+      };
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: messageContent }],
+      }),
     });
 
-    const rawText = response.content[0].text;
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Anthropic API error:', errText);
+      return {
+        statusCode: 500,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: `Claude API 錯誤：${response.status}` }),
+      };
+    }
+
+    const data = await response.json();
+    const rawText = data.content[0].text;
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
       return {
         statusCode: 500,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: '分析結果格式錯誤，請重試' }),
       };
     }
@@ -112,17 +132,14 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       body: JSON.stringify({ points }),
     };
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error('Handler error:', error);
     return {
       statusCode: 500,
-      headers: { 'Access-Control-Allow-Origin': '*' },
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: `分析失敗：${error.message}` }),
     };
   }
