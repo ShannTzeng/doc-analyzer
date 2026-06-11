@@ -1,4 +1,5 @@
 exports.handler = async (event) => {
+  console.log('Function started, method:', event.httpMethod);
   const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
