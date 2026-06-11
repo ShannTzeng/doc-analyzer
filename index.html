@@ -352,7 +352,7 @@
         </svg>
       </div>
       <h2>拖曳檔案至此，或點擊選擇</h2>
-      <p>每次分析一份檔案</p>
+      <p>每次分析一份檔案，上限 4MB</p>
       <div class="file-types">
         <span class="badge">PDF</span>
         <span class="badge">Word (.docx)</span>
@@ -453,6 +453,12 @@
 
       if (!allowed.includes(file.type) && !allowedExt.includes(ext)) {
         showError('不支援的檔案類型，請上傳 PDF、Word 或圖片 (JPG/PNG)');
+        return;
+      }
+
+      const MAX_MB = 4;
+      if (file.size > MAX_MB * 1024 * 1024) {
+        showError(`檔案太大（${formatSize(file.size)}），請上傳 ${MAX_MB}MB 以內的檔案`);
         return;
       }
 
