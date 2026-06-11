@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文件內容分析系統</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+      color: #1a1a2e;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #1a1a2e;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin-top: 8px;
+      color: #6b7280;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+      padding: 32px;
+      width: 100%;
+      max-width: 640px;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #d1d5db;
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: #6366f1;
+      background: #f5f3ff;
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 16px;
+      background: #ede9fe;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .drop-icon svg { color: #6366f1; }
+
+    .drop-zone h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .drop-zone p {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+
+    .file-types {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: #f3f4f6;
+      color: #6b7280;
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 99px;
+    }
+
+    /* File preview */
+    .file-preview {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-top: 16px;
+    }
+
+    .file-preview.visible { display: flex; }
+
+    .file-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 1.2rem;
+    }
+
+    .file-icon.pdf  { background: #fee2e2; }
+    .file-icon.word { background: #dbeafe; }
+    .file-icon.img  { background: #d1fae5; }
+
+    .file-info { flex: 1; min-width: 0; }
+    .file-info .name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #111827;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-info .size { font-size: 0.78rem; color: #9ca3af; margin-top: 2px; }
+
+    .btn-remove {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #9ca3af;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+    }
+    .btn-remove:hover { color: #ef4444; background: #fee2e2; }
+
+    /* Image preview */
+    .img-preview-wrap {
+      display: none;
+      margin-top: 12px;
+      border-radius: 10px;
+      overflow: hidden;
+      max-height: 220px;
+    }
+    .img-preview-wrap.visible { display: block; }
+    .img-preview-wrap img {
+      width: 100%;
+      object-fit: cover;
+      max-height: 220px;
+    }
+
+    /* Analyze button */
+    .btn-analyze {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 13px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      letter-spacing: 0.3px;
+    }
+    .btn-analyze:hover:not(:disabled) { background: #4f46e5; }
+    .btn-analyze:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* Loading */
+    .loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 32px 0;
+    }
+    .loading.visible { display: flex; }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading p {
+      font-size: 0.9rem;
+      color: #6b7280;
+    }
+
+    /* Results */
+    .results {
+      display: none;
+      margin-top: 28px;
+    }
+    .results.visible { display: block; }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .results-header h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .point-count {
+      background: #ede9fe;
+      color: #6366f1;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+    }
+
+    .points-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .points-list li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: #fafafa;
+      border: 1px solid #f3f4f6;
+      border-radius: 10px;
+      padding: 13px 15px;
+      animation: fadeIn 0.3s ease both;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .point-num {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      background: #6366f1;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    .point-text {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #374151;
+    }
+
+    /* Error */
+    .error-msg {
+      display: none;
+      margin-top: 16px;
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      border-radius: 10px;
+      padding: 13px 16px;
+      color: #b91c1c;
+      font-size: 0.88rem;
+    }
+    .error-msg.visible { display: block; }
+
+    .btn-again {
+      display: block;
+      width: 100%;
+      margin-top: 16px;
+      padding: 11px;
+      background: transparent;
+      color: #6366f1;
+      border: 1.5px solid #6366f1;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-again:hover { background: #6366f1; color: #fff; }
+
+    footer {
+      margin-top: 36px;
+      font-size: 0.78rem;
+      color: #9ca3af;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>文件內容分析系統</h1>
+    <p>上傳 PDF、Word 或圖片，由 Claude AI 自動萃取重點</p>
+  </header>
+
+  <div class="card">
+
+    <!-- Drop Zone -->
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+      <div class="drop-icon">
+        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+        </svg>
+      </div>
+      <h2>拖曳檔案至此，或點擊選擇</h2>
+      <p>每次分析一份檔案</p>
+      <div class="file-types">
+        <span class="badge">PDF</span>
+        <span class="badge">Word (.docx)</span>
+        <span class="badge">JPG</span>
+        <span class="badge">PNG</span>
+      </div>
+    </div>
+
+    <!-- File Preview -->
+    <div class="file-preview" id="filePreview">
+      <div class="file-icon" id="fileIcon"></div>
+      <div class="file-info">
+        <div class="name" id="fileName"></div>
+        <div class="size" id="fileSize"></div>
+      </div>
+      <button class="btn-remove" id="btnRemove" title="移除檔案">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Image Preview -->
+    <div class="img-preview-wrap" id="imgPreviewWrap">
+      <img id="imgPreview" src="" alt="預覽" />
+    </div>
+
+    <!-- Analyze Button -->
+    <button class="btn-analyze" id="btnAnalyze" disabled>開始分析</button>
+
+    <!-- Loading -->
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Claude 正在分析中，請稍候⋯</p>
+    </div>
+
+    <!-- Error -->
+    <div class="error-msg" id="errorMsg"></div>
+
+    <!-- Results -->
+    <div class="results" id="results">
+      <div class="results-header">
+        <h3>分析重點</h3>
+        <span class="point-count" id="pointCount"></span>
+      </div>
+      <ul class="points-list" id="pointsList"></ul>
+      <button class="btn-again" id="btnAgain">分析另一份檔案</button>
+    </div>
+
+  </div>
+
+  <footer>Powered by Claude AI &nbsp;·&nbsp; 檔案僅用於本次分析，不會儲存</footer>
+
+  <script>
+    const dropZone   = document.getElementById('dropZone');
+    const fileInput  = document.getElementById('fileInput');
+    const filePreview = document.getElementById('filePreview');
+    const fileIcon   = document.getElementById('fileIcon');
+    const fileNameEl = document.getElementById('fileName');
+    const fileSizeEl = document.getElementById('fileSize');
+    const btnRemove  = document.getElementById('btnRemove');
+    const imgWrap    = document.getElementById('imgPreviewWrap');
+    const imgEl      = document.getElementById('imgPreview');
+    const btnAnalyze = document.getElementById('btnAnalyze');
+    const loading    = document.getElementById('loading');
+    const errorMsg   = document.getElementById('errorMsg');
+    const results    = document.getElementById('results');
+    const pointsList = document.getElementById('pointsList');
+    const pointCount = document.getElementById('pointCount');
+    const btnAgain   = document.getElementById('btnAgain');
+
+    let selectedFile = null;
+
+    // Drag & drop
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) handleFile(fileInput.files[0]);
+    });
+
+    btnRemove.addEventListener('click', resetFile);
+    btnAgain.addEventListener('click', resetAll);
+
+    function handleFile(file) {
+      const allowed = ['application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/jpeg', 'image/png'];
+      const ext = file.name.split('.').pop().toLowerCase();
+      const allowedExt = ['pdf','doc','docx','jpg','jpeg','png'];
+
+      if (!allowed.includes(file.type) && !allowedExt.includes(ext)) {
+        showError('不支援的檔案類型，請上傳 PDF、Word 或圖片 (JPG/PNG)');
+        return;
+      }
+
+      selectedFile = file;
+      hideError();
+      hideResults();
+
+      // Icon
+      if (file.type === 'application/pdf' || ext === 'pdf') {
+        fileIcon.textContent = '📄';
+        fileIcon.className = 'file-icon pdf';
+      } else if (file.type.includes('word') || ext === 'docx' || ext === 'doc') {
+        fileIcon.textContent = '📝';
+        fileIcon.className = 'file-icon word';
+      } else {
+        fileIcon.textContent = '🖼️';
+        fileIcon.className = 'file-icon img';
+      }
+
+      fileNameEl.textContent = file.name;
+      fileSizeEl.textContent = formatSize(file.size);
+      filePreview.classList.add('visible');
+      btnAnalyze.disabled = false;
+
+      // Image preview
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => { imgEl.src = e.target.result; imgWrap.classList.add('visible'); };
+        reader.readAsDataURL(file);
+      } else {
+        imgWrap.classList.remove('visible');
+      }
+    }
+
+    function resetFile() {
+      selectedFile = null;
+      fileInput.value = '';
+      filePreview.classList.remove('visible');
+      imgWrap.classList.remove('visible');
+      btnAnalyze.disabled = true;
+      hideError();
+    }
+
+    function resetAll() {
+      resetFile();
+      hideResults();
+      hideError();
+    }
+
+    btnAnalyze.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      btnAnalyze.disabled = true;
+      loading.classList.add('visible');
+      hideError();
+      hideResults();
+
+      try {
+        const base64 = await toBase64(selectedFile);
+        const payload = {
+          fileData: base64,
+          mimeType: selectedFile.type || getMimeFromExt(selectedFile.name),
+          fileName: selectedFile.name,
+        };
+
+        const resp = await fetch('/.netlify/functions/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          throw new Error(data.error || '伺服器錯誤，請稍後再試');
+        }
+
+        showResults(data.points);
+      } catch (err) {
+        showError(err.message || '分析失敗，請稍後再試');
+        btnAnalyze.disabled = false;
+      } finally {
+        loading.classList.remove('visible');
+      }
+    });
+
+    function showResults(points) {
+      pointsList.innerHTML = '';
+      points.forEach((pt, i) => {
+        const li = document.createElement('li');
+        li.style.animationDelay = `${i * 0.06}s`;
+        li.innerHTML = `<span class="point-num">${i + 1}</span><span class="point-text">${escapeHtml(pt)}</span>`;
+        pointsList.appendChild(li);
+      });
+      pointCount.textContent = `${points.length} 點`;
+      results.classList.add('visible');
+    }
+
+    function hideResults() { results.classList.remove('visible'); }
+    function showError(msg) { errorMsg.textContent = msg; errorMsg.classList.add('visible'); }
+    function hideError() { errorMsg.classList.remove('visible'); }
+
+    function toBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result;
+          resolve(dataUrl.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function getMimeFromExt(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const map = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+      return map[ext] || 'application/octet-stream';
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+  </script>
+</body>
+</html>

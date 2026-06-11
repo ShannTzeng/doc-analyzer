@@ -1,0 +1,9 @@
+{
+  "name": "doc-analyzer",
+  "version": "1.0.0",
+  "description": "Document content analysis system powered by Claude",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "mammoth": "^1.8.0"
+  }
+}
