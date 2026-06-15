@@ -12,15 +12,20 @@ exports.handler = async (event) => {
 
   try {
     const jobId = event.queryStringParameters && event.queryStringParameters.id;
-    if (!jobId) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: '缺少 job ID' }) };
+    if (!jobId) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: '缺少 job ID' }) };
+    }
 
     const store = getStore('job-results');
     const result = await store.get(jobId, { type: 'json' });
 
-    if (!result) return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending' }) };
+    if (result === null) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending' }) };
+    }
 
     return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
   } catch (err) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: err.message }) };
+    console.error('job-status error:', err.message);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending', debug: err.message }) };
   }
 };
