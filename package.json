@@ -1,5 +1,8 @@
 {
   "name": "doc-analyzer",
   "version": "1.0.0",
-  "description": "Document content analysis system powered by Claude"
+  "description": "Document content analysis system powered by Claude",
+  "dependencies": {
+    "mammoth": "^1.8.0"
+  }
 }

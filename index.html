@@ -18,23 +18,9 @@
       color: #1a1a2e;
     }
 
-    header {
-      text-align: center;
-      margin-bottom: 36px;
-    }
-
-    header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #1a1a2e;
-      letter-spacing: -0.5px;
-    }
-
-    header p {
-      margin-top: 8px;
-      color: #6b7280;
-      font-size: 0.95rem;
-    }
+    header { text-align: center; margin-bottom: 36px; }
+    header h1 { font-size: 2rem; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; }
+    header p { margin-top: 8px; color: #6b7280; font-size: 0.95rem; }
 
     .card {
       background: #ffffff;
@@ -44,6 +30,37 @@
       width: 100%;
       max-width: 640px;
     }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: #f3f4f6;
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .tab-btn.active {
+      background: #ffffff;
+      color: #6366f1;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
 
     /* Drop zone */
     .drop-zone {
@@ -56,8 +73,7 @@
       position: relative;
     }
 
-    .drop-zone:hover,
-    .drop-zone.drag-over {
+    .drop-zone:hover, .drop-zone.drag-over {
       border-color: #6366f1;
       background: #f5f3ff;
     }
@@ -72,8 +88,7 @@
     }
 
     .drop-icon {
-      width: 52px;
-      height: 52px;
+      width: 52px; height: 52px;
       margin: 0 auto 16px;
       background: #ede9fe;
       border-radius: 50%;
@@ -83,18 +98,8 @@
     }
 
     .drop-icon svg { color: #6366f1; }
-
-    .drop-zone h2 {
-      font-size: 1rem;
-      font-weight: 600;
-      color: #374151;
-      margin-bottom: 6px;
-    }
-
-    .drop-zone p {
-      font-size: 0.85rem;
-      color: #9ca3af;
-    }
+    .drop-zone h2 { font-size: 1rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    .drop-zone p { font-size: 0.85rem; color: #9ca3af; }
 
     .file-types {
       display: flex;
@@ -128,8 +133,7 @@
     .file-preview.visible { display: flex; }
 
     .file-icon {
-      width: 40px;
-      height: 40px;
+      width: 40px; height: 40px;
       border-radius: 8px;
       display: flex;
       align-items: center;
@@ -144,28 +148,18 @@
 
     .file-info { flex: 1; min-width: 0; }
     .file-info .name {
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #111827;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 0.9rem; font-weight: 600; color: #111827;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .file-info .size { font-size: 0.78rem; color: #9ca3af; margin-top: 2px; }
 
     .btn-remove {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #9ca3af;
-      padding: 4px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
+      background: none; border: none; cursor: pointer;
+      color: #9ca3af; padding: 4px; border-radius: 6px;
+      display: flex; align-items: center;
     }
     .btn-remove:hover { color: #ef4444; background: #fee2e2; }
 
-    /* Image preview */
     .img-preview-wrap {
       display: none;
       margin-top: 12px;
@@ -174,24 +168,59 @@
       max-height: 220px;
     }
     .img-preview-wrap.visible { display: block; }
-    .img-preview-wrap img {
-      width: 100%;
-      object-fit: cover;
-      max-height: 220px;
+    .img-preview-wrap img { width: 100%; object-fit: cover; max-height: 220px; }
+
+    /* Drive link panel */
+    .drive-info {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      font-size: 0.84rem;
+      color: #0369a1;
+      line-height: 1.6;
     }
+
+    .drive-info strong { display: block; margin-bottom: 4px; color: #0c4a6e; }
+
+    .drive-input-wrap { position: relative; }
+
+    .drive-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      color: #111827;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .drive-input:focus { border-color: #6366f1; }
+    .drive-input::placeholder { color: #9ca3af; }
+
+    .drive-preview {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-top: 12px;
+    }
+
+    .drive-preview.visible { display: flex; }
+    .drive-preview span { font-size: 0.85rem; color: #166534; flex: 1; }
 
     /* Analyze button */
     .btn-analyze {
-      display: block;
-      width: 100%;
-      margin-top: 20px;
+      display: block; width: 100%; margin-top: 20px;
       padding: 13px;
-      background: #6366f1;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 1rem;
-      font-weight: 600;
+      background: #6366f1; color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 600;
       cursor: pointer;
       transition: background 0.2s, opacity 0.2s;
       letter-spacing: 0.3px;
@@ -200,74 +229,38 @@
     .btn-analyze:disabled { opacity: 0.55; cursor: not-allowed; }
 
     /* Loading */
-    .loading {
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      gap: 14px;
-      padding: 32px 0;
-    }
+    .loading { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 32px 0; }
     .loading.visible { display: flex; }
 
     .spinner {
-      width: 44px;
-      height: 44px;
+      width: 44px; height: 44px;
       border: 3px solid #e5e7eb;
       border-top-color: #6366f1;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    .loading p {
-      font-size: 0.9rem;
-      color: #6b7280;
-    }
+    .loading p { font-size: 0.9rem; color: #6b7280; }
 
     /* Results */
-    .results {
-      display: none;
-      margin-top: 28px;
-    }
+    .results { display: none; margin-top: 28px; }
     .results.visible { display: block; }
 
-    .results-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
-    .results-header h3 {
-      font-size: 1rem;
-      font-weight: 700;
-      color: #111827;
-    }
+    .results-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+    .results-header h3 { font-size: 1rem; font-weight: 700; color: #111827; }
 
     .point-count {
-      background: #ede9fe;
-      color: #6366f1;
-      font-size: 0.78rem;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 99px;
+      background: #ede9fe; color: #6366f1;
+      font-size: 0.78rem; font-weight: 600;
+      padding: 2px 8px; border-radius: 99px;
     }
 
-    .points-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
+    .points-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 
     .points-list li {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      background: #fafafa;
-      border: 1px solid #f3f4f6;
-      border-radius: 10px;
-      padding: 13px 15px;
+      display: flex; gap: 12px; align-items: flex-start;
+      background: #fafafa; border: 1px solid #f3f4f6;
+      border-radius: 10px; padding: 13px 15px;
       animation: fadeIn 0.3s ease both;
     }
 
@@ -277,60 +270,39 @@
     }
 
     .point-num {
-      flex-shrink: 0;
-      width: 24px;
-      height: 24px;
-      background: #6366f1;
-      color: #fff;
-      font-size: 0.75rem;
-      font-weight: 700;
+      flex-shrink: 0; width: 24px; height: 24px;
+      background: #6366f1; color: #fff;
+      font-size: 0.75rem; font-weight: 700;
       border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       margin-top: 1px;
     }
 
-    .point-text {
-      font-size: 0.9rem;
-      line-height: 1.6;
-      color: #374151;
-    }
+    .point-text { font-size: 0.9rem; line-height: 1.6; color: #374151; }
 
     /* Error */
     .error-msg {
-      display: none;
-      margin-top: 16px;
-      background: #fee2e2;
-      border: 1px solid #fca5a5;
-      border-radius: 10px;
-      padding: 13px 16px;
-      color: #b91c1c;
-      font-size: 0.88rem;
+      display: none; margin-top: 16px;
+      background: #fee2e2; border: 1px solid #fca5a5;
+      border-radius: 10px; padding: 13px 16px;
+      color: #b91c1c; font-size: 0.88rem;
     }
     .error-msg.visible { display: block; }
 
     .btn-again {
-      display: block;
-      width: 100%;
-      margin-top: 16px;
+      display: block; width: 100%; margin-top: 16px;
       padding: 11px;
-      background: transparent;
-      color: #6366f1;
+      background: transparent; color: #6366f1;
       border: 1.5px solid #6366f1;
-      border-radius: 10px;
-      font-size: 0.9rem;
-      font-weight: 600;
+      border-radius: 10px; font-size: 0.9rem; font-weight: 600;
       cursor: pointer;
       transition: background 0.2s, color 0.2s;
     }
     .btn-again:hover { background: #6366f1; color: #fff; }
 
     footer {
-      margin-top: 36px;
-      font-size: 0.78rem;
-      color: #9ca3af;
-      text-align: center;
+      margin-top: 36px; font-size: 0.78rem;
+      color: #9ca3af; text-align: center;
     }
   </style>
 </head>
@@ -343,41 +315,71 @@
 
   <div class="card">
 
-    <!-- Drop Zone -->
-    <div class="drop-zone" id="dropZone">
-      <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
-      <div class="drop-icon">
-        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-        </svg>
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="upload">上傳檔案</button>
+      <button class="tab-btn" data-tab="drive">Google 雲端連結</button>
+    </div>
+
+    <!-- Tab: Upload -->
+    <div class="tab-panel active" id="tab-upload">
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+        <div class="drop-icon">
+          <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+        </div>
+        <h2>拖曳檔案至此，或點擊選擇</h2>
+        <p>每次分析一份檔案，上限 4MB</p>
+        <div class="file-types">
+          <span class="badge">PDF</span>
+          <span class="badge">Word (.docx)</span>
+          <span class="badge">JPG</span>
+          <span class="badge">PNG</span>
+        </div>
       </div>
-      <h2>拖曳檔案至此，或點擊選擇</h2>
-      <p>每次分析一份檔案，上限 4MB</p>
-      <div class="file-types">
-        <span class="badge">PDF</span>
-        <span class="badge">Word (.docx)</span>
-        <span class="badge">JPG</span>
-        <span class="badge">PNG</span>
+
+      <div class="file-preview" id="filePreview">
+        <div class="file-icon" id="fileIcon"></div>
+        <div class="file-info">
+          <div class="name" id="fileName"></div>
+          <div class="size" id="fileSize"></div>
+        </div>
+        <button class="btn-remove" id="btnRemove" title="移除檔案">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="img-preview-wrap" id="imgPreviewWrap">
+        <img id="imgPreview" src="" alt="預覽" />
       </div>
     </div>
 
-    <!-- File Preview -->
-    <div class="file-preview" id="filePreview">
-      <div class="file-icon" id="fileIcon"></div>
-      <div class="file-info">
-        <div class="name" id="fileName"></div>
-        <div class="size" id="fileSize"></div>
+    <!-- Tab: Google Drive -->
+    <div class="tab-panel" id="tab-drive">
+      <div class="drive-info">
+        <strong>使用說明</strong>
+        1. 在 Google 雲端硬碟對檔案按右鍵 → 共用 → 取得連結<br>
+        2. 將存取權限設為「<strong>知道連結的人都可以檢視</strong>」<br>
+        3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）
       </div>
-      <button class="btn-remove" id="btnRemove" title="移除檔案">
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      <div class="drive-input-wrap">
+        <input
+          type="url"
+          class="drive-input"
+          id="driveInput"
+          placeholder="貼上 Google Drive 連結，例如 https://drive.google.com/file/d/..."
+        />
+      </div>
+      <div class="drive-preview" id="drivePreview">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#16a34a" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
-      </button>
-    </div>
-
-    <!-- Image Preview -->
-    <div class="img-preview-wrap" id="imgPreviewWrap">
-      <img id="imgPreview" src="" alt="預覽" />
+        <span id="drivePreviewText"></span>
+      </div>
     </div>
 
     <!-- Analyze Button -->
@@ -407,24 +409,43 @@
   <footer>Powered by Claude AI &nbsp;·&nbsp; 檔案僅用於本次分析，不會儲存</footer>
 
   <script>
-    const dropZone   = document.getElementById('dropZone');
-    const fileInput  = document.getElementById('fileInput');
+    // Elements
+    const dropZone    = document.getElementById('dropZone');
+    const fileInput   = document.getElementById('fileInput');
     const filePreview = document.getElementById('filePreview');
-    const fileIcon   = document.getElementById('fileIcon');
-    const fileNameEl = document.getElementById('fileName');
-    const fileSizeEl = document.getElementById('fileSize');
-    const btnRemove  = document.getElementById('btnRemove');
-    const imgWrap    = document.getElementById('imgPreviewWrap');
-    const imgEl      = document.getElementById('imgPreview');
-    const btnAnalyze = document.getElementById('btnAnalyze');
-    const loading    = document.getElementById('loading');
-    const errorMsg   = document.getElementById('errorMsg');
-    const results    = document.getElementById('results');
-    const pointsList = document.getElementById('pointsList');
-    const pointCount = document.getElementById('pointCount');
-    const btnAgain   = document.getElementById('btnAgain');
+    const fileIcon    = document.getElementById('fileIcon');
+    const fileNameEl  = document.getElementById('fileName');
+    const fileSizeEl  = document.getElementById('fileSize');
+    const btnRemove   = document.getElementById('btnRemove');
+    const imgWrap     = document.getElementById('imgPreviewWrap');
+    const imgEl       = document.getElementById('imgPreview');
+    const driveInput  = document.getElementById('driveInput');
+    const drivePreview = document.getElementById('drivePreview');
+    const drivePreviewText = document.getElementById('drivePreviewText');
+    const btnAnalyze  = document.getElementById('btnAnalyze');
+    const loading     = document.getElementById('loading');
+    const errorMsg    = document.getElementById('errorMsg');
+    const results     = document.getElementById('results');
+    const pointsList  = document.getElementById('pointsList');
+    const pointCount  = document.getElementById('pointCount');
+    const btnAgain    = document.getElementById('btnAgain');
 
     let selectedFile = null;
+    let activeTab = 'upload';
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeTab = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + activeTab).classList.add('active');
+        hideError();
+        hideResults();
+        updateAnalyzeBtn();
+      });
+    });
 
     // Drag & drop
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -432,22 +453,17 @@
     dropZone.addEventListener('drop', (e) => {
       e.preventDefault();
       dropZone.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
     });
 
     fileInput.addEventListener('change', () => {
       if (fileInput.files[0]) handleFile(fileInput.files[0]);
     });
 
-    btnRemove.addEventListener('click', resetFile);
-    btnAgain.addEventListener('click', resetAll);
-
     function handleFile(file) {
-      const allowed = ['application/pdf',
-        'application/msword',
+      const allowed = ['application/pdf','application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'image/jpeg', 'image/png'];
+        'image/jpeg','image/png'];
       const ext = file.name.split('.').pop().toLowerCase();
       const allowedExt = ['pdf','doc','docx','jpg','jpeg','png'];
 
@@ -458,7 +474,7 @@
 
       const MAX_MB = 4;
       if (file.size > MAX_MB * 1024 * 1024) {
-        showError(`檔案太大（${formatSize(file.size)}），請上傳 ${MAX_MB}MB 以內的檔案`);
+        showError(`檔案太大（${formatSize(file.size)}），請上傳 ${MAX_MB}MB 以內的檔案，或改用「Google 雲端連結」分頁`);
         return;
       }
 
@@ -466,24 +482,19 @@
       hideError();
       hideResults();
 
-      // Icon
       if (file.type === 'application/pdf' || ext === 'pdf') {
-        fileIcon.textContent = '📄';
-        fileIcon.className = 'file-icon pdf';
+        fileIcon.textContent = '📄'; fileIcon.className = 'file-icon pdf';
       } else if (file.type.includes('word') || ext === 'docx' || ext === 'doc') {
-        fileIcon.textContent = '📝';
-        fileIcon.className = 'file-icon word';
+        fileIcon.textContent = '📝'; fileIcon.className = 'file-icon word';
       } else {
-        fileIcon.textContent = '🖼️';
-        fileIcon.className = 'file-icon img';
+        fileIcon.textContent = '🖼️'; fileIcon.className = 'file-icon img';
       }
 
       fileNameEl.textContent = file.name;
       fileSizeEl.textContent = formatSize(file.size);
       filePreview.classList.add('visible');
-      btnAnalyze.disabled = false;
+      updateAnalyzeBtn();
 
-      // Image preview
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = (e) => { imgEl.src = e.target.result; imgWrap.classList.add('visible'); };
@@ -493,36 +504,70 @@
       }
     }
 
-    function resetFile() {
+    btnRemove.addEventListener('click', () => {
       selectedFile = null;
       fileInput.value = '';
       filePreview.classList.remove('visible');
       imgWrap.classList.remove('visible');
-      btnAnalyze.disabled = true;
+      updateAnalyzeBtn();
       hideError();
+    });
+
+    // Google Drive input
+    driveInput.addEventListener('input', () => {
+      const url = driveInput.value.trim();
+      const isDrive = url.includes('drive.google.com');
+      drivePreview.classList.toggle('visible', isDrive && url.length > 10);
+      if (isDrive) drivePreviewText.textContent = '已偵測到 Google Drive 連結';
+      hideError();
+      hideResults();
+      updateAnalyzeBtn();
+    });
+
+    function updateAnalyzeBtn() {
+      if (activeTab === 'upload') {
+        btnAnalyze.disabled = !selectedFile;
+      } else {
+        const url = driveInput.value.trim();
+        btnAnalyze.disabled = !url.includes('drive.google.com');
+      }
     }
 
-    function resetAll() {
-      resetFile();
+    btnAgain.addEventListener('click', () => {
+      selectedFile = null;
+      fileInput.value = '';
+      filePreview.classList.remove('visible');
+      imgWrap.classList.remove('visible');
+      driveInput.value = '';
+      drivePreview.classList.remove('visible');
       hideResults();
       hideError();
-    }
+      updateAnalyzeBtn();
+    });
 
+    // Analyze
     btnAnalyze.addEventListener('click', async () => {
-      if (!selectedFile) return;
-
       btnAnalyze.disabled = true;
       loading.classList.add('visible');
       hideError();
       hideResults();
 
       try {
-        const base64 = await toBase64(selectedFile);
-        const payload = {
-          fileData: base64,
-          mimeType: selectedFile.type || getMimeFromExt(selectedFile.name),
-          fileName: selectedFile.name,
-        };
+        let payload;
+
+        if (activeTab === 'upload') {
+          const base64 = await toBase64(selectedFile);
+          payload = {
+            fileData: base64,
+            mimeType: selectedFile.type || getMimeFromExt(selectedFile.name),
+            fileName: selectedFile.name,
+          };
+        } else {
+          payload = {
+            driveUrl: driveInput.value.trim(),
+            fileName: 'document',
+          };
+        }
 
         const resp = await fetch('/.netlify/functions/analyze', {
           method: 'POST',
@@ -532,9 +577,7 @@
 
         const data = await resp.json();
 
-        if (!resp.ok || data.error) {
-          throw new Error(data.error || '伺服器錯誤，請稍後再試');
-        }
+        if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
 
         showResults(data.points);
       } catch (err) {
@@ -564,10 +607,7 @@
     function toBase64(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (e) => {
-          const dataUrl = e.target.result;
-          resolve(dataUrl.split(',')[1]);
-        };
+        reader.onload = (e) => resolve(e.target.result.split(',')[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
