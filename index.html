@@ -4,69 +4,112 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>文件內容分析系統</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif;
-      background: #f0f2f5;
+      background: #f0ede6;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 40px 16px;
-      color: #1a1a2e;
+      color: #1a1a1a;
     }
 
-    header { text-align: center; margin-bottom: 36px; }
-    header h1 { font-size: 2rem; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; }
-    header p { margin-top: 8px; color: #6b7280; font-size: 0.95rem; }
+    /* ── Header ── */
+    .site-header {
+      background: #2b4a25;
+      padding: 0 28px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
 
+    .site-logo {
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .site-logo img { width: 36px; height: 36px; object-fit: contain; }
+
+    .site-title {
+      color: #ffffff;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      max-width: 700px;
+      margin: 36px auto;
+      padding: 0 16px 60px;
+    }
+
+    .page-heading {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .page-heading h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #2b4a25;
+    }
+
+    .page-heading p {
+      margin-top: 6px;
+      font-size: 0.88rem;
+      color: #6b6b6b;
+    }
+
+    /* ── Card ── */
     .card {
       background: #ffffff;
-      border-radius: 16px;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
-      padding: 32px;
-      width: 100%;
-      max-width: 640px;
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      padding: 28px;
     }
 
-    /* Tabs */
+    /* ── Tabs ── */
     .tabs {
       display: flex;
-      background: #f3f4f6;
-      border-radius: 10px;
-      padding: 4px;
+      gap: 8px;
       margin-bottom: 24px;
     }
 
     .tab-btn {
-      flex: 1;
-      padding: 9px;
-      border: none;
-      background: transparent;
-      border-radius: 8px;
-      font-size: 0.88rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border: 1.5px solid #d0d0c8;
+      border-radius: 99px;
+      background: #ffffff;
+      font-size: 0.875rem;
       font-weight: 600;
-      color: #6b7280;
+      color: #555;
       cursor: pointer;
-      transition: background 0.2s, color 0.2s;
+      transition: all 0.2s;
     }
 
     .tab-btn.active {
-      background: #ffffff;
-      color: #6366f1;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      background: #6ab04c;
+      border-color: #6ab04c;
+      color: #ffffff;
     }
+
+    .tab-btn svg { flex-shrink: 0; }
 
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
 
-    /* Drop zone */
+    /* ── Drop zone ── */
     .drop-zone {
-      border: 2px dashed #d1d5db;
+      border: 2px dashed #c8c8be;
       border-radius: 12px;
-      padding: 48px 24px;
+      padding: 44px 24px;
       text-align: center;
       cursor: pointer;
       transition: border-color 0.2s, background 0.2s;
@@ -74,341 +117,409 @@
     }
 
     .drop-zone:hover, .drop-zone.drag-over {
-      border-color: #6366f1;
-      background: #f5f3ff;
+      border-color: #6ab04c;
+      background: #f2f9ee;
     }
 
     .drop-zone input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-      width: 100%;
-      height: 100%;
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer;
+      width: 100%; height: 100%;
     }
 
     .drop-icon {
       width: 52px; height: 52px;
-      margin: 0 auto 16px;
-      background: #ede9fe;
+      margin: 0 auto 14px;
+      background: #eaf4e5;
       border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
     }
 
-    .drop-icon svg { color: #6366f1; }
-    .drop-zone h2 { font-size: 1rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
-    .drop-zone p { font-size: 0.85rem; color: #9ca3af; }
+    .drop-zone h2 { font-size: 0.95rem; font-weight: 600; color: #333; margin-bottom: 4px; }
+    .drop-zone p  { font-size: 0.82rem; color: #888; }
 
     .file-types {
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-      margin-top: 14px;
-      flex-wrap: wrap;
+      display: flex; gap: 6px; justify-content: center;
+      margin-top: 12px; flex-wrap: wrap;
     }
 
     .badge {
-      background: #f3f4f6;
-      color: #6b7280;
-      font-size: 0.75rem;
-      font-weight: 500;
-      padding: 3px 10px;
-      border-radius: 99px;
+      background: #f0ede6; color: #6b6b6b;
+      font-size: 0.72rem; font-weight: 500;
+      padding: 2px 9px; border-radius: 99px;
     }
 
-    /* File preview */
+    /* ── File preview ── */
     .file-preview {
-      display: none;
-      align-items: center;
-      gap: 12px;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-top: 16px;
+      display: none; align-items: center; gap: 12px;
+      background: #f8f8f5; border: 1px solid #e8e8e0;
+      border-radius: 10px; padding: 12px 14px; margin-top: 14px;
     }
-
     .file-preview.visible { display: flex; }
 
     .file-icon {
-      width: 40px; height: 40px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      font-size: 1.2rem;
+      width: 38px; height: 38px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 1.1rem;
     }
-
-    .file-icon.pdf  { background: #fee2e2; }
+    .file-icon.pdf  { background: #fde8e8; }
     .file-icon.word { background: #dbeafe; }
-    .file-icon.img  { background: #d1fae5; }
+    .file-icon.img  { background: #dcfce7; }
 
     .file-info { flex: 1; min-width: 0; }
     .file-info .name {
-      font-size: 0.9rem; font-weight: 600; color: #111827;
+      font-size: 0.88rem; font-weight: 600; color: #1a1a1a;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .file-info .size { font-size: 0.78rem; color: #9ca3af; margin-top: 2px; }
+    .file-info .size { font-size: 0.75rem; color: #888; margin-top: 2px; }
 
     .btn-remove {
       background: none; border: none; cursor: pointer;
-      color: #9ca3af; padding: 4px; border-radius: 6px;
-      display: flex; align-items: center;
+      color: #aaa; padding: 4px; border-radius: 6px; display: flex; align-items: center;
     }
-    .btn-remove:hover { color: #ef4444; background: #fee2e2; }
+    .btn-remove:hover { color: #e53e3e; background: #fee2e2; }
 
     .img-preview-wrap {
-      display: none;
-      margin-top: 12px;
-      border-radius: 10px;
-      overflow: hidden;
-      max-height: 220px;
+      display: none; margin-top: 12px;
+      border-radius: 10px; overflow: hidden; max-height: 200px;
     }
     .img-preview-wrap.visible { display: block; }
-    .img-preview-wrap img { width: 100%; object-fit: cover; max-height: 220px; }
+    .img-preview-wrap img { width: 100%; object-fit: cover; max-height: 200px; }
 
-    /* Drive link panel */
+    /* ── Drive tab ── */
     .drive-info {
-      background: #f0f9ff;
-      border: 1px solid #bae6fd;
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-bottom: 16px;
-      font-size: 0.84rem;
-      color: #0369a1;
-      line-height: 1.6;
+      background: #f0f7ee; border: 1px solid #c3debb;
+      border-radius: 10px; padding: 13px 15px; margin-bottom: 16px;
+      font-size: 0.82rem; color: #3a6b2a; line-height: 1.65;
     }
-
-    .drive-info strong { display: block; margin-bottom: 4px; color: #0c4a6e; }
-
-    .drive-input-wrap { position: relative; }
+    .drive-info strong { display: block; font-size: 0.85rem; margin-bottom: 4px; color: #2b4a25; }
 
     .drive-input {
-      width: 100%;
-      padding: 12px 16px;
-      border: 1.5px solid #d1d5db;
-      border-radius: 10px;
-      font-size: 0.9rem;
-      color: #111827;
-      outline: none;
+      width: 100%; padding: 11px 14px;
+      border: 1.5px solid #d0d0c8; border-radius: 10px;
+      font-size: 0.88rem; color: #1a1a1a; outline: none;
       transition: border-color 0.2s;
     }
-
-    .drive-input:focus { border-color: #6366f1; }
-    .drive-input::placeholder { color: #9ca3af; }
+    .drive-input:focus { border-color: #6ab04c; }
+    .drive-input::placeholder { color: #aaa; }
 
     .drive-preview {
-      display: none;
-      align-items: center;
-      gap: 10px;
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      border-radius: 10px;
-      padding: 12px 16px;
-      margin-top: 12px;
+      display: none; align-items: center; gap: 8px;
+      background: #f0f9ee; border: 1px solid #b8e0a8;
+      border-radius: 10px; padding: 10px 14px; margin-top: 10px;
     }
-
     .drive-preview.visible { display: flex; }
-    .drive-preview span { font-size: 0.85rem; color: #166534; flex: 1; }
+    .drive-preview span { font-size: 0.82rem; color: #3a7a28; }
 
-    /* Analyze button */
+    /* ── Analyze button ── */
     .btn-analyze {
-      display: block; width: 100%; margin-top: 20px;
+      display: block; width: 100%; margin-top: 18px;
       padding: 13px;
-      background: #6366f1; color: #fff;
+      background: #6ab04c; color: #fff;
       border: none; border-radius: 10px;
-      font-size: 1rem; font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, opacity 0.2s;
+      font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; transition: background 0.2s, opacity 0.2s;
       letter-spacing: 0.3px;
     }
-    .btn-analyze:hover:not(:disabled) { background: #4f46e5; }
-    .btn-analyze:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-analyze:hover:not(:disabled) { background: #5a9e3c; }
+    .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* Loading */
+    /* ── Loading ── */
     .loading { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 32px 0; }
     .loading.visible { display: flex; }
 
     .spinner {
-      width: 44px; height: 44px;
-      border: 3px solid #e5e7eb;
-      border-top-color: #6366f1;
+      width: 42px; height: 42px;
+      border: 3px solid #e0e0d8;
+      border-top-color: #6ab04c;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loading p { font-size: 0.9rem; color: #6b7280; }
+    .loading p { font-size: 0.88rem; color: #6b6b6b; }
 
-    /* Results */
+    /* ── Error ── */
+    .error-msg {
+      display: none; margin-top: 14px;
+      background: #fef2f2; border: 1px solid #fca5a5;
+      border-radius: 10px; padding: 12px 15px;
+      color: #b91c1c; font-size: 0.85rem;
+    }
+    .error-msg.visible { display: block; }
+
+    /* ── Results ── */
     .results { display: none; margin-top: 28px; }
     .results.visible { display: block; }
 
-    .results-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
-    .results-header h3 { font-size: 1rem; font-weight: 700; color: #111827; }
-
-    .point-count {
-      background: #ede9fe; color: #6366f1;
-      font-size: 0.78rem; font-weight: 600;
-      padding: 2px 8px; border-radius: 99px;
+    .section-label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.95rem; font-weight: 700; color: #2b4a25;
+      margin-bottom: 14px;
     }
 
-    .points-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .section-icon {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: #6ab04c; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    }
+
+    /* Report meta fields */
+    .report-meta {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .field-group label {
+      display: block; font-size: 0.78rem; font-weight: 600;
+      color: #555; margin-bottom: 5px;
+    }
+
+    .field-group input {
+      width: 100%; padding: 9px 12px;
+      border: 1.5px solid #d0d0c8; border-radius: 8px;
+      font-size: 0.88rem; color: #1a1a1a; outline: none;
+      transition: border-color 0.2s;
+    }
+    .field-group input:focus { border-color: #6ab04c; }
+    .field-group input::placeholder { color: #bbb; }
+
+    /* Points list */
+    .points-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 
     .points-list li {
       display: flex; gap: 12px; align-items: flex-start;
-      background: #fafafa; border: 1px solid #f3f4f6;
-      border-radius: 10px; padding: 13px 15px;
+      background: #f8f8f5; border: 1px solid #ebebE3;
+      border-radius: 10px; padding: 12px 14px;
       animation: fadeIn 0.3s ease both;
     }
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
+      from { opacity: 0; transform: translateY(5px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
     .point-num {
       flex-shrink: 0; width: 24px; height: 24px;
-      background: #6366f1; color: #fff;
-      font-size: 0.75rem; font-weight: 700;
+      background: #6ab04c; color: #fff;
+      font-size: 0.72rem; font-weight: 700;
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       margin-top: 1px;
     }
 
-    .point-text { font-size: 0.9rem; line-height: 1.6; color: #374151; }
+    .point-text { font-size: 0.88rem; line-height: 1.65; color: #333; }
 
-    /* Error */
-    .error-msg {
-      display: none; margin-top: 16px;
-      background: #fee2e2; border: 1px solid #fca5a5;
-      border-radius: 10px; padding: 13px 16px;
-      color: #b91c1c; font-size: 0.88rem;
+    /* Action buttons */
+    .result-actions {
+      display: flex; gap: 10px; margin-top: 20px;
     }
-    .error-msg.visible { display: block; }
+
+    .btn-report {
+      flex: 1; padding: 11px;
+      background: #2b4a25; color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; transition: background 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-report:hover { background: #1e3519; }
 
     .btn-again {
-      display: block; width: 100%; margin-top: 16px;
-      padding: 11px;
-      background: transparent; color: #6366f1;
-      border: 1.5px solid #6366f1;
-      border-radius: 10px; font-size: 0.9rem; font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s, color 0.2s;
+      flex: 1; padding: 11px;
+      background: transparent; color: #6ab04c;
+      border: 1.5px solid #6ab04c;
+      border-radius: 10px; font-size: 0.88rem; font-weight: 700;
+      cursor: pointer; transition: background 0.2s, color 0.2s;
     }
-    .btn-again:hover { background: #6366f1; color: #fff; }
+    .btn-again:hover { background: #6ab04c; color: #fff; }
 
-    footer {
-      margin-top: 36px; font-size: 0.78rem;
-      color: #9ca3af; text-align: center;
+    /* ── Footer ── */
+    .site-footer {
+      text-align: center; padding: 20px;
+      font-size: 0.75rem; color: #aaa;
+    }
+
+    /* ── Print report styles ── */
+    @media print {
+      body { background: #fff; }
+      .site-header, .site-footer, .card { box-shadow: none; }
     }
   </style>
 </head>
 <body>
 
-  <header>
-    <h1>文件內容分析系統</h1>
-    <p>上傳 PDF、Word 或圖片，由 Claude AI 自動萃取重點</p>
+  <!-- Header -->
+  <header class="site-header">
+    <div class="site-logo"><img src="/logo.png" alt="logo" /></div>
+    <span class="site-title">文件內容分析系統</span>
   </header>
 
-  <div class="card">
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="upload">上傳檔案</button>
-      <button class="tab-btn" data-tab="drive">Google 雲端連結</button>
+  <!-- Main -->
+  <main class="main">
+    <div class="page-heading">
+      <h1>文件內容分析</h1>
+      <p>上傳 PDF、Word 或圖片，由 Claude AI 自動萃取課程重點</p>
     </div>
 
-    <!-- Tab: Upload -->
-    <div class="tab-panel active" id="tab-upload">
-      <div class="drop-zone" id="dropZone">
-        <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
-        <div class="drop-icon">
-          <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <div class="card">
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="upload">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
           </svg>
-        </div>
-        <h2>拖曳檔案至此，或點擊選擇</h2>
-        <p>每次分析一份檔案，上限 4MB</p>
-        <div class="file-types">
-          <span class="badge">PDF</span>
-          <span class="badge">Word (.docx)</span>
-          <span class="badge">JPG</span>
-          <span class="badge">PNG</span>
-        </div>
-      </div>
-
-      <div class="file-preview" id="filePreview">
-        <div class="file-icon" id="fileIcon"></div>
-        <div class="file-info">
-          <div class="name" id="fileName"></div>
-          <div class="size" id="fileSize"></div>
-        </div>
-        <button class="btn-remove" id="btnRemove" title="移除檔案">
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          上傳檔案
+        </button>
+        <button class="tab-btn" data-tab="drive">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4.433 22l3.95-6.835H22l-3.95 6.835H4.433zM2 17.899L5.95 11h7.9L9.9 17.899H2zm8.05-9.234L6.1 2h11.8l3.95 6.665H10.05z"/>
           </svg>
+          Google 雲端連結
         </button>
       </div>
 
-      <div class="img-preview-wrap" id="imgPreviewWrap">
-        <img id="imgPreview" src="" alt="預覽" />
+      <!-- Tab: Upload -->
+      <div class="tab-panel active" id="tab-upload">
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+          <div class="drop-icon">
+            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#6ab04c" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+          </div>
+          <h2>拖曳檔案至此，或點擊選擇</h2>
+          <p>每次分析一份檔案，上限 4MB</p>
+          <div class="file-types">
+            <span class="badge">PDF</span>
+            <span class="badge">Word (.docx)</span>
+            <span class="badge">JPG</span>
+            <span class="badge">PNG</span>
+          </div>
+        </div>
+
+        <div class="file-preview" id="filePreview">
+          <div class="file-icon" id="fileIcon"></div>
+          <div class="file-info">
+            <div class="name" id="fileName"></div>
+            <div class="size" id="fileSize"></div>
+          </div>
+          <button class="btn-remove" id="btnRemove">
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="img-preview-wrap" id="imgPreviewWrap">
+          <img id="imgPreview" src="" alt="預覽" />
+        </div>
+      </div>
+
+      <!-- Tab: Google Drive -->
+      <div class="tab-panel" id="tab-drive">
+        <div class="drive-info">
+          <strong>使用說明</strong>
+          1. 在 Google 雲端硬碟對檔案按右鍵 → 共用 → 取得連結<br>
+          2. 將存取權限設為「<strong>知道連結的人都可以檢視</strong>」<br>
+          3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）
+        </div>
+        <input type="url" class="drive-input" id="driveInput"
+          placeholder="貼上 Google Drive 連結，例如 https://drive.google.com/file/d/..." />
+        <div class="drive-preview" id="drivePreview">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#3a7a28" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span>已偵測到 Google Drive 連結</span>
+        </div>
+      </div>
+
+      <!-- Analyze Button -->
+      <button class="btn-analyze" id="btnAnalyze" disabled>開始分析</button>
+
+      <!-- Loading -->
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p id="loadingMsg">Claude 正在分析中，請稍候⋯</p>
+      </div>
+
+      <!-- Error -->
+      <div class="error-msg" id="errorMsg"></div>
+
+      <!-- Results -->
+      <div class="results" id="results">
+
+        <!-- Section: Report meta -->
+        <div class="section-label">
+          <span class="section-icon">1</span>
+          填寫課程資訊（用於生成報告）
+        </div>
+        <div class="report-meta">
+          <div class="field-group">
+            <label>執行學校</label>
+            <input type="text" id="schoolInput" placeholder="例：台北市立國小" />
+          </div>
+          <div class="field-group">
+            <label>課程名稱</label>
+            <input type="text" id="courseInput" placeholder="例：生命科學探索課程" />
+          </div>
+        </div>
+
+        <!-- Section: Analysis points -->
+        <div class="section-label">
+          <span class="section-icon">2</span>
+          分析重點
+          <span style="margin-left:auto;font-size:0.78rem;font-weight:400;color:#888;" id="pointCount"></span>
+        </div>
+        <ul class="points-list" id="pointsList"></ul>
+
+        <!-- Actions -->
+        <div class="result-actions">
+          <button class="btn-report" id="btnReport">
+            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            生成分析報告
+          </button>
+          <button class="btn-again" id="btnAgain">分析另一份</button>
+        </div>
+
       </div>
     </div>
+  </main>
 
-    <!-- Tab: Google Drive -->
-    <div class="tab-panel" id="tab-drive">
-      <div class="drive-info">
-        <strong>使用說明</strong>
-        1. 在 Google 雲端硬碟對檔案按右鍵 → 共用 → 取得連結<br>
-        2. 將存取權限設為「<strong>知道連結的人都可以檢視</strong>」<br>
-        3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）
-      </div>
-      <div class="drive-input-wrap">
-        <input
-          type="url"
-          class="drive-input"
-          id="driveInput"
-          placeholder="貼上 Google Drive 連結，例如 https://drive.google.com/file/d/..."
-        />
-      </div>
-      <div class="drive-preview" id="drivePreview">
-        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#16a34a" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        <span id="drivePreviewText"></span>
-      </div>
-    </div>
-
-    <!-- Analyze Button -->
-    <button class="btn-analyze" id="btnAnalyze" disabled>開始分析</button>
-
-    <!-- Loading -->
-    <div class="loading" id="loading">
-      <div class="spinner"></div>
-      <p>Claude 正在分析中，請稍候⋯</p>
-    </div>
-
-    <!-- Error -->
-    <div class="error-msg" id="errorMsg"></div>
-
-    <!-- Results -->
-    <div class="results" id="results">
-      <div class="results-header">
-        <h3>分析重點</h3>
-        <span class="point-count" id="pointCount"></span>
-      </div>
-      <ul class="points-list" id="pointsList"></ul>
-      <button class="btn-again" id="btnAgain">分析另一份檔案</button>
-    </div>
-
-  </div>
-
-  <footer>Powered by Claude AI &nbsp;·&nbsp; 檔案僅用於本次分析，不會儲存</footer>
+  <footer class="site-footer">Powered by Claude AI &nbsp;·&nbsp; 檔案僅用於本次分析，不會儲存</footer>
 
   <script>
+    // PDF.js setup
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    async function renderPdfFirstPage(base64Data) {
+      try {
+        const binary = atob(base64Data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        return canvas.toDataURL('image/jpeg', 0.85);
+      } catch (e) {
+        console.warn('PDF render failed:', e);
+        return null;
+      }
+    }
+
+    // State
+    let selectedFile = null;
+    let activeTab = 'upload';
+    let capturedImageBase64 = null;
+
     // Elements
     const dropZone    = document.getElementById('dropZone');
     const fileInput   = document.getElementById('fileInput');
@@ -421,19 +532,19 @@
     const imgEl       = document.getElementById('imgPreview');
     const driveInput  = document.getElementById('driveInput');
     const drivePreview = document.getElementById('drivePreview');
-    const drivePreviewText = document.getElementById('drivePreviewText');
     const btnAnalyze  = document.getElementById('btnAnalyze');
     const loading     = document.getElementById('loading');
+    const loadingMsg  = document.getElementById('loadingMsg');
     const errorMsg    = document.getElementById('errorMsg');
     const results     = document.getElementById('results');
     const pointsList  = document.getElementById('pointsList');
     const pointCount  = document.getElementById('pointCount');
     const btnAgain    = document.getElementById('btnAgain');
+    const btnReport   = document.getElementById('btnReport');
+    const schoolInput = document.getElementById('schoolInput');
+    const courseInput = document.getElementById('courseInput');
 
-    let selectedFile = null;
-    let activeTab = 'upload';
-
-    // Tab switching
+    // Tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         activeTab = btn.dataset.tab;
@@ -441,63 +552,60 @@
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('tab-' + activeTab).classList.add('active');
-        hideError();
-        hideResults();
-        updateAnalyzeBtn();
+        hideError(); hideResults(); updateBtn();
       });
     });
 
     // Drag & drop
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); dropZone.classList.remove('drag-over');
       if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
     });
-
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files[0]) handleFile(fileInput.files[0]);
-    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
 
     function handleFile(file) {
-      const allowed = ['application/pdf','application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'image/jpeg','image/png'];
       const ext = file.name.split('.').pop().toLowerCase();
       const allowedExt = ['pdf','doc','docx','jpg','jpeg','png'];
-
-      if (!allowed.includes(file.type) && !allowedExt.includes(ext)) {
-        showError('不支援的檔案類型，請上傳 PDF、Word 或圖片 (JPG/PNG)');
-        return;
+      if (!allowedExt.includes(ext)) {
+        showError('不支援的檔案類型，請上傳 PDF、Word 或圖片 (JPG/PNG)'); return;
       }
-
-      const MAX_MB = 4;
-      if (file.size > MAX_MB * 1024 * 1024) {
-        showError(`檔案太大（${formatSize(file.size)}），請上傳 ${MAX_MB}MB 以內的檔案，或改用「Google 雲端連結」分頁`);
-        return;
+      if (file.size > 4 * 1024 * 1024) {
+        showError(`檔案太大（${formatSize(file.size)}），請上傳 4MB 以內的檔案，或改用「Google 雲端連結」分頁`); return;
       }
-
       selectedFile = file;
-      hideError();
-      hideResults();
+      capturedImageBase64 = null;
+      hideError(); hideResults();
 
-      if (file.type === 'application/pdf' || ext === 'pdf') {
-        fileIcon.textContent = '📄'; fileIcon.className = 'file-icon pdf';
-      } else if (file.type.includes('word') || ext === 'docx' || ext === 'doc') {
-        fileIcon.textContent = '📝'; fileIcon.className = 'file-icon word';
-      } else {
-        fileIcon.textContent = '🖼️'; fileIcon.className = 'file-icon img';
-      }
+      if (['pdf'].includes(ext)) { fileIcon.textContent = '📄'; fileIcon.className = 'file-icon pdf'; }
+      else if (['doc','docx'].includes(ext)) { fileIcon.textContent = '📝'; fileIcon.className = 'file-icon word'; }
+      else { fileIcon.textContent = '🖼️'; fileIcon.className = 'file-icon img'; }
 
       fileNameEl.textContent = file.name;
       fileSizeEl.textContent = formatSize(file.size);
       filePreview.classList.add('visible');
-      updateAnalyzeBtn();
+      updateBtn();
 
       if (file.type.startsWith('image/')) {
         const reader = new FileReader();
-        reader.onload = (e) => { imgEl.src = e.target.result; imgWrap.classList.add('visible'); };
+        reader.onload = e => {
+          imgEl.src = e.target.result;
+          imgWrap.classList.add('visible');
+          capturedImageBase64 = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      } else if (file.type === 'application/pdf' || ext === 'pdf') {
+        const reader = new FileReader();
+        reader.onload = async e => {
+          const base64 = e.target.result.split(',')[1];
+          const dataUrl = await renderPdfFirstPage(base64);
+          if (dataUrl) {
+            imgEl.src = dataUrl;
+            imgWrap.classList.add('visible');
+            capturedImageBase64 = dataUrl;
+          }
+        };
         reader.readAsDataURL(file);
       } else {
         imgWrap.classList.remove('visible');
@@ -505,105 +613,159 @@
     }
 
     btnRemove.addEventListener('click', () => {
-      selectedFile = null;
+      selectedFile = null; capturedImageBase64 = null;
       fileInput.value = '';
       filePreview.classList.remove('visible');
       imgWrap.classList.remove('visible');
-      updateAnalyzeBtn();
-      hideError();
+      updateBtn(); hideError();
     });
 
-    // Google Drive input
     driveInput.addEventListener('input', () => {
       const url = driveInput.value.trim();
-      const isDrive = url.includes('drive.google.com');
-      drivePreview.classList.toggle('visible', isDrive && url.length > 10);
-      if (isDrive) drivePreviewText.textContent = '已偵測到 Google Drive 連結';
-      hideError();
-      hideResults();
-      updateAnalyzeBtn();
+      const ok = url.includes('drive.google.com');
+      drivePreview.classList.toggle('visible', ok);
+      hideError(); hideResults(); updateBtn();
     });
 
-    function updateAnalyzeBtn() {
-      if (activeTab === 'upload') {
-        btnAnalyze.disabled = !selectedFile;
-      } else {
-        const url = driveInput.value.trim();
-        btnAnalyze.disabled = !url.includes('drive.google.com');
-      }
+    function updateBtn() {
+      if (activeTab === 'upload') btnAnalyze.disabled = !selectedFile;
+      else btnAnalyze.disabled = !driveInput.value.trim().includes('drive.google.com');
     }
 
     btnAgain.addEventListener('click', () => {
-      selectedFile = null;
+      selectedFile = null; capturedImageBase64 = null;
       fileInput.value = '';
       filePreview.classList.remove('visible');
       imgWrap.classList.remove('visible');
       driveInput.value = '';
       drivePreview.classList.remove('visible');
-      hideResults();
-      hideError();
-      updateAnalyzeBtn();
+      hideResults(); hideError(); updateBtn();
     });
 
     // Analyze
     btnAnalyze.addEventListener('click', async () => {
       btnAnalyze.disabled = true;
       loading.classList.add('visible');
-      hideError();
-      hideResults();
+      hideError(); hideResults();
 
       try {
+        let payload;
+
         if (activeTab === 'upload') {
-          // Direct upload mode
           const base64 = await toBase64(selectedFile);
-          const payload = {
+          payload = {
             fileData: base64,
             mimeType: selectedFile.type || getMimeFromExt(selectedFile.name),
             fileName: selectedFile.name,
           };
-
-          const resp = await fetch('/.netlify/functions/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-
-          const data = await resp.json();
-          if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
-          showResults(data.points);
-
         } else {
-          // Google Drive mode
-          document.querySelector('.loading p').textContent = '正在下載並分析，大型檔案需要較長時間⋯';
-
-          const resp = await fetch('/.netlify/functions/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ driveUrl: driveInput.value.trim() }),
-          });
-
-          const data = await resp.json();
-          if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
-          showResults(data.points);
+          loadingMsg.textContent = '正在下載並分析，大型檔案需要較長時間⋯';
+          payload = { driveUrl: driveInput.value.trim() };
         }
+
+        const resp = await fetch('/.netlify/functions/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
+        showResults(data.points);
+
       } catch (err) {
         showError(err.message || '分析失敗，請稍後再試');
         btnAnalyze.disabled = false;
       } finally {
         loading.classList.remove('visible');
-        document.querySelector('.loading p').textContent = 'Claude 正在分析中，請稍候⋯';
+        loadingMsg.textContent = 'Claude 正在分析中，請稍候⋯';
       }
     });
 
+    // Report generation
+    btnReport.addEventListener('click', () => {
+      const school = schoolInput.value.trim() || '（未填寫）';
+      const course = courseInput.value.trim() || '（未填寫）';
+      const points = Array.from(pointsList.querySelectorAll('li')).map(li =>
+        li.querySelector('.point-text').textContent
+      );
+      const dateStr = new Date().toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric' });
+      const imgTag = capturedImageBase64
+        ? `<div class="report-img-wrap"><img src="${capturedImageBase64}" alt="代表性內容畫面" /></div>`
+        : '';
+
+      const html = `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>課程分析報告</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif; color: #1a1a1a; background: #fff; padding: 40px; max-width: 800px; margin: 0 auto; }
+  .report-header { background: #2b4a25; color: #fff; border-radius: 12px; padding: 24px 28px; margin-bottom: 28px; display: flex; align-items: center; gap: 14px; }
+  .report-logo { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .report-logo img { width: 40px; height: 40px; object-fit: contain; }
+  .report-header h1 { font-size: 1.2rem; font-weight: 700; }
+  .report-header p { font-size: 0.8rem; opacity: 0.75; margin-top: 3px; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 28px; }
+  .meta-card { background: #f8f8f5; border: 1px solid #e8e8e0; border-radius: 10px; padding: 14px 16px; }
+  .meta-card .label { font-size: 0.72rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .meta-card .value { font-size: 0.95rem; font-weight: 600; color: #1a1a1a; }
+  .section-title { font-size: 0.88rem; font-weight: 700; color: #2b4a25; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e0; display: flex; align-items: center; gap: 8px; }
+  .section-dot { width: 10px; height: 10px; background: #6ab04c; border-radius: 50%; }
+  .points-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
+  .points-list li { display: flex; gap: 12px; align-items: flex-start; background: #f8f8f5; border: 1px solid #ebebE3; border-radius: 8px; padding: 11px 14px; }
+  .num { flex-shrink: 0; width: 22px; height: 22px; background: #6ab04c; color: #fff; font-size: 0.7rem; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .pt { font-size: 0.88rem; line-height: 1.65; color: #333; }
+  .report-img-wrap { margin-top: 8px; border-radius: 10px; overflow: hidden; border: 1px solid #e8e8e0; }
+  .report-img-wrap img { width: 100%; max-height: 400px; object-fit: contain; background: #f8f8f5; display: block; }
+  .report-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e8e8e0; font-size: 0.72rem; color: #aaa; text-align: center; }
+  @media print { body { padding: 20px; } @page { margin: 1.5cm; } }
+</style>
+</head>
+<body>
+  <div class="report-header">
+    <div class="report-logo"><img src="${window.location.origin}/logo.png" alt="logo" /></div>
+    <div>
+      <h1>課程內容分析報告</h1>
+      <p>由 Claude AI 自動生成</p>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-card"><div class="label">執行學校</div><div class="value">${escapeHtml(school)}</div></div>
+    <div class="meta-card"><div class="label">課程名稱</div><div class="value">${escapeHtml(course)}</div></div>
+    <div class="meta-card"><div class="label">分析日期</div><div class="value">${dateStr}</div></div>
+    <div class="meta-card"><div class="label">重點數量</div><div class="value">${points.length} 點</div></div>
+  </div>
+
+  <div class="section-title"><span class="section-dot"></span>分析重點</div>
+  <ul class="points-list">
+    ${points.map((p,i) => `<li><span class="num">${i+1}</span><span class="pt">${escapeHtml(p)}</span></li>`).join('')}
+  </ul>
+
+  ${capturedImageBase64 ? `<div class="section-title"><span class="section-dot"></span>代表性內容畫面</div>${imgTag}` : ''}
+
+  <div class="report-footer">本報告由文件內容分析系統自動生成 &nbsp;·&nbsp; Powered by Claude AI</div>
+  <script>window.onload = () => window.print();<\/script>
+</body>
+</html>`;
+
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+    });
+
+    // Helpers
     function showResults(points) {
       pointsList.innerHTML = '';
       points.forEach((pt, i) => {
         const li = document.createElement('li');
         li.style.animationDelay = `${i * 0.06}s`;
-        li.innerHTML = `<span class="point-num">${i + 1}</span><span class="point-text">${escapeHtml(pt)}</span>`;
+        li.innerHTML = `<span class="point-num">${i+1}</span><span class="point-text">${escapeHtml(pt)}</span>`;
         pointsList.appendChild(li);
       });
-      pointCount.textContent = `${points.length} 點`;
+      pointCount.textContent = `共 ${points.length} 點`;
       results.classList.add('visible');
     }
 
@@ -614,7 +776,7 @@
     function toBase64(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+        reader.onload = e => resolve(e.target.result.split(',')[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
@@ -628,7 +790,7 @@
 
     function getMimeFromExt(name) {
       const ext = name.split('.').pop().toLowerCase();
-      const map = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+      const map = { pdf:'application/pdf', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc:'application/msword', jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png' };
       return map[ext] || 'application/octet-stream';
     }
 
