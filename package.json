@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Document content analysis system powered by Claude",
   "dependencies": {
-    "mammoth": "^1.8.0"
+    "mammoth": "^1.8.0",
+    "@netlify/blobs": "^8.0.0"
   }
 }

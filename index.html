@@ -553,40 +553,70 @@
       hideResults();
 
       try {
-        let payload;
-
         if (activeTab === 'upload') {
+          // Direct upload mode
           const base64 = await toBase64(selectedFile);
-          payload = {
+          const payload = {
             fileData: base64,
             mimeType: selectedFile.type || getMimeFromExt(selectedFile.name),
             fileName: selectedFile.name,
           };
+
+          const resp = await fetch('/.netlify/functions/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await resp.json();
+          if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
+          showResults(data.points);
+
         } else {
-          payload = {
-            driveUrl: driveInput.value.trim(),
-            fileName: 'document',
-          };
+          // Google Drive mode — background function + polling
+          const jobId = crypto.randomUUID();
+          document.querySelector('.loading p').textContent = '正在下載並分析，大型檔案需要較長時間⋯';
+
+          const resp = await fetch('/.netlify/functions/analyze-large-background', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, driveUrl: driveInput.value.trim() }),
+          });
+
+          if (resp.status !== 202 && !resp.ok) throw new Error('啟動分析失敗，請重試');
+
+          // Poll every 4 seconds
+          const points = await pollJobResult(jobId, 120);
+          showResults(points);
         }
-
-        const resp = await fetch('/.netlify/functions/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await resp.json();
-
-        if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
-
-        showResults(data.points);
       } catch (err) {
         showError(err.message || '分析失敗，請稍後再試');
         btnAnalyze.disabled = false;
       } finally {
         loading.classList.remove('visible');
+        document.querySelector('.loading p').textContent = 'Claude 正在分析中，請稍候⋯';
       }
     });
+
+    async function pollJobResult(jobId, maxSeconds) {
+      const interval = 4000;
+      const maxAttempts = Math.ceil((maxSeconds * 1000) / interval);
+
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, interval));
+
+        const resp = await fetch(`/.netlify/functions/job-status?id=${jobId}`);
+        if (!resp.ok) throw new Error('查詢分析狀態失敗');
+
+        const data = await resp.json();
+
+        if (data.status === 'done') return data.points;
+        if (data.status === 'error') throw new Error(data.error || '分析失敗，請重試');
+        // status === 'pending' or 'processing' → keep polling
+      }
+
+      throw new Error('分析逾時，請稍後再試');
+    }
 
     function showResults(points) {
       pointsList.innerHTML = '';
