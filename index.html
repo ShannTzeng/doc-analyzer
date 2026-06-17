@@ -889,9 +889,9 @@
   .points-list li { display: flex; gap: 12px; align-items: flex-start; background: #f8f8f5; border: 1px solid #ebebE3; border-radius: 8px; padding: 11px 14px; }
   .num { flex-shrink: 0; width: 22px; height: 22px; background: #6ab04c; color: #fff; font-size: 0.7rem; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
   .pt { font-size: 0.88rem; line-height: 1.65; color: #333; }
-  .report-img-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
-  .report-img-wrap { border-radius: 8px; overflow: hidden; border: 1px solid #e8e8e0; page-break-inside: avoid; }
-  .report-img-wrap img { width: 100%; max-height: 320px; object-fit: contain; background: #f8f8f5; display: block; }
+  .report-img-grid { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 10px; margin-bottom: 12px; page-break-inside: avoid; }
+  .report-img-wrap { flex: 1 1 0; min-width: 0; border-radius: 8px; overflow: hidden; border: 1px solid #e8e8e0; page-break-inside: avoid; }
+  .report-img-wrap img { width: 100%; height: auto; object-fit: contain; background: #f8f8f5; display: block; }
   .report-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e8e8e0; font-size: 0.72rem; color: #aaa; text-align: center; }
   @media print { body { padding: 20px; } @page { margin: 1.5cm; } }
 </style>
