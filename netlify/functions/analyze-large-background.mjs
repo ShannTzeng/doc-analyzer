@@ -1,4 +1,4 @@
-const { getStore } = require('@netlify/blobs');
+import { getStore } from '@netlify/blobs';
 
 const ANALYSIS_PROMPT = `請仔細分析這份文件/圖片的內容，提取真正有價值的重點。
 
@@ -20,56 +20,49 @@ function extractDriveId(url) {
   return null;
 }
 
-async function saveResult(jobId, payload) {
-  try {
-    const store = getStore('job-results');
-    await store.setJSON(jobId, payload);
-  } catch (e) {
-    console.error('saveResult error:', e.message);
-  }
-}
-
-exports.handler = async (event) => {
+export default async (req) => {
   let jobId;
+  const store = getStore('job-results');
+
   try {
-    const body = JSON.parse(event.body);
+    const body = await req.json();
     jobId = body.jobId;
     const driveUrl = body.driveUrl;
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      await saveResult(jobId, { status: 'error', error: '未設定 API Key' });
-      return;
+      await store.setJSON(jobId, { status: 'error', error: '未設定 API Key' });
+      return new Response('ok');
     }
 
-    await saveResult(jobId, { status: 'processing' });
+    await store.setJSON(jobId, { status: 'processing' });
 
-    // Download from Google Drive
+    // 下載 Google Drive 檔案
     const fileId = extractDriveId(driveUrl);
     if (!fileId) {
-      await saveResult(jobId, { status: 'error', error: '無法解析 Google Drive 連結' });
-      return;
+      await store.setJSON(jobId, { status: 'error', error: '無法解析 Google Drive 連結' });
+      return new Response('ok');
     }
 
     const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
     const driveRes = await fetch(downloadUrl, { redirect: 'follow' });
 
     if (!driveRes.ok) {
-      await saveResult(jobId, { status: 'error', error: `下載失敗：HTTP ${driveRes.status}` });
-      return;
+      await store.setJSON(jobId, { status: 'error', error: `下載失敗：HTTP ${driveRes.status}` });
+      return new Response('ok');
     }
 
     const contentType = driveRes.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
-      await saveResult(jobId, { status: 'error', error: '無法存取檔案，請確認分享設定為「知道連結的人都可以檢視」' });
-      return;
+      await store.setJSON(jobId, { status: 'error', error: '無法存取檔案，請確認分享設定為「知道連結的人都可以檢視」' });
+      return new Response('ok');
     }
 
     const buffer = Buffer.from(await driveRes.arrayBuffer());
     const base64 = buffer.toString('base64');
     let mimeType = contentType.split(';')[0].trim() || 'application/pdf';
 
-    // Build Claude message
+    // 組 Claude 訊息
     let messageContent = [];
     if (mimeType.startsWith('image/')) {
       const supported = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -101,25 +94,27 @@ exports.handler = async (event) => {
 
     const data = await claudeRes.json();
     if (!claudeRes.ok) {
-      await saveResult(jobId, { status: 'error', error: `API錯誤 ${claudeRes.status}: ${data?.error?.message}` });
-      return;
+      await store.setJSON(jobId, { status: 'error', error: `API錯誤 ${claudeRes.status}: ${data?.error?.message}` });
+      return new Response('ok');
     }
 
     const rawText = data.content[0].text;
     const match = rawText.match(/\{[\s\S]*\}/);
     if (!match) {
-      await saveResult(jobId, { status: 'error', error: '分析結果格式錯誤，請重試' });
-      return;
+      await store.setJSON(jobId, { status: 'error', error: '分析結果格式錯誤，請重試' });
+      return new Response('ok');
     }
 
     const parsed = JSON.parse(match[0]);
-    const points = (parsed.points || []).filter(p => p && p.trim());
-    await saveResult(jobId, { status: 'done', points });
+    const points = (parsed.points || []).filter((p) => p && p.trim());
+    await store.setJSON(jobId, { status: 'done', points });
 
   } catch (err) {
     console.error('Background handler error:', err);
     if (jobId) {
-      await saveResult(jobId, { status: 'error', error: err.message });
+      try { await store.setJSON(jobId, { status: 'error', error: err.message }); } catch (_) {}
     }
   }
+
+  return new Response('ok');
 };

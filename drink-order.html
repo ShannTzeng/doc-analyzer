@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>飲料訂單系統</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748; }
+
+    header {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    header h1 { font-size: 1.4rem; }
+    header .subtitle { font-size: 0.85rem; opacity: 0.85; margin-top: 2px; }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: #4a5568; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+
+    /* Order form */
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+    .form-group { display: flex; flex-direction: column; flex: 1; min-width: 160px; }
+    .form-group label { font-size: 0.8rem; color: #718096; margin-bottom: 4px; font-weight: 600; }
+    .form-group input, .form-group select {
+      padding: 8px 12px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: #667eea; }
+
+    .size-group { display: flex; gap: 8px; }
+    .size-btn {
+      flex: 1;
+      padding: 8px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .size-btn.active { border-color: #667eea; background: #667eea; color: white; }
+
+    .sugar-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sugar-btn {
+      padding: 6px 12px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 20px;
+      background: white;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.2s;
+    }
+    .sugar-btn.active { border-color: #667eea; background: #667eea; color: white; }
+
+    .ice-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ice-btn {
+      padding: 6px 12px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 20px;
+      background: white;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.2s;
+    }
+    .ice-btn.active { border-color: #3182ce; background: #3182ce; color: white; }
+
+    .note-input { width: 100%; padding: 8px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem; outline: none; }
+    .note-input:focus { border-color: #667eea; }
+
+    .add-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 0.2s;
+    }
+    .add-btn:hover { opacity: 0.9; }
+
+    /* Menu categories */
+    .menu-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab-btn {
+      padding: 6px 16px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 20px;
+      background: white;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+    .tab-btn.active { border-color: #667eea; background: #667eea; color: white; }
+
+    .add-custom-row { display: flex; gap: 8px; margin-top: 12px; align-items: flex-end; }
+    .add-custom-row input { padding: 7px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 0.88rem; outline: none; }
+    .add-custom-row input:focus { border-color: #667eea; }
+    .add-custom-row .custom-name { flex: 2; }
+    .add-custom-row .custom-price { flex: 1; max-width: 90px; }
+    .add-custom-row button { padding: 7px 14px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; }
+    .add-custom-row button:hover { background: #5a67d8; }
+    .menu-item.custom-item { border-style: dashed; position: relative; }
+    .menu-item.custom-item .remove-custom { position: absolute; top: 4px; right: 4px; background: none; border: none; cursor: pointer; color: #fc8181; font-size: 0.75rem; line-height: 1; padding: 0; }
+
+    .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+    .menu-item {
+      border: 1.5px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .menu-item:hover { border-color: #667eea; background: #f7f5ff; }
+    .menu-item.selected { border-color: #667eea; background: #ebf4ff; }
+    .menu-item .item-name { font-size: 0.88rem; font-weight: 600; }
+    .menu-item .item-price { font-size: 0.8rem; color: #667eea; margin-top: 4px; }
+
+    /* Order list */
+    .order-list { list-style: none; }
+    .order-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: #f7fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .order-item-info { flex: 1; }
+    .order-item-name { font-weight: 600; font-size: 0.9rem; }
+    .order-item-detail { font-size: 0.78rem; color: #718096; margin-top: 2px; }
+    .order-item-person { font-size: 0.78rem; color: #667eea; font-weight: 600; margin-top: 2px; }
+    .order-item-price { font-weight: 700; color: #2d3748; margin: 0 12px; }
+    .delete-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #fc8181;
+      font-size: 1.1rem;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .delete-btn:hover { background: #fff5f5; }
+
+    .empty-msg { text-align: center; color: #a0aec0; padding: 24px; font-size: 0.9rem; }
+
+    /* Summary */
+    .summary-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .summary-header h2 { border: none; margin: 0; padding: 0; }
+    .export-btn {
+      padding: 7px 16px;
+      background: #48bb78;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .export-btn:hover { background: #38a169; }
+    .clear-btn {
+      padding: 7px 16px;
+      background: #fc8181;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .clear-btn:hover { background: #f56565; }
+
+    .person-group { margin-bottom: 12px; }
+    .person-name { font-weight: 700; font-size: 0.95rem; color: #4a5568; margin-bottom: 6px; }
+    .person-items { padding-left: 12px; }
+    .person-item-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 3px 0; color: #2d3748; }
+    .person-subtotal { text-align: right; font-size: 0.82rem; color: #667eea; font-weight: 600; margin-top: 4px; }
+
+    .total-bar {
+      border-top: 2px solid #e2e8f0;
+      margin-top: 12px;
+      padding-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    .total-bar .amount { color: #667eea; }
+
+    @media (max-width: 600px) {
+      .form-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🧋 飲料訂單系統</h1>
+    <div class="subtitle">多人團購收單</div>
+  </div>
+  <div id="orderCount" style="font-size:1.8rem;font-weight:700;">0 單</div>
+</header>
+
+<div class="container">
+
+  <!-- Menu + Form -->
+  <div class="card">
+    <h2>點餐</h2>
+
+    <!-- Person name -->
+    <div class="form-row">
+      <div class="form-group" style="max-width:200px;">
+        <label>訂購人姓名</label>
+        <input type="text" id="personName" placeholder="請輸入姓名" />
+      </div>
+    </div>
+
+    <!-- Menu tabs -->
+    <div class="menu-tabs" id="menuTabs"></div>
+    <div class="menu-grid" id="menuGrid"></div>
+    <div class="add-custom-row" id="addCustomRow" style="display:none;">
+      <input class="custom-name" type="text" id="customName" placeholder="品項名稱" />
+      <input class="custom-price" type="number" id="customPrice" placeholder="價格" min="0" />
+      <button onclick="addCustomItem()">＋ 新增品項</button>
+    </div>
+
+    <div style="height:16px"></div>
+
+    <!-- Size -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>大小</label>
+        <div class="size-group" id="sizeGroup">
+          <button class="size-btn active" data-val="M">M 中杯</button>
+          <button class="size-btn" data-val="L">L 大杯 +$10</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sugar -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>甜度</label>
+        <div class="sugar-group" id="sugarGroup">
+          <button class="sugar-btn" data-val="全糖">全糖</button>
+          <button class="sugar-btn active" data-val="少糖">少糖</button>
+          <button class="sugar-btn" data-val="半糖">半糖</button>
+          <button class="sugar-btn" data-val="微糖">微糖</button>
+          <button class="sugar-btn" data-val="無糖">無糖</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ice -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>冰塊</label>
+        <div class="ice-group" id="iceGroup">
+          <button class="ice-btn" data-val="正常冰">正常冰</button>
+          <button class="ice-btn active" data-val="少冰">少冰</button>
+          <button class="ice-btn" data-val="微冰">微冰</button>
+          <button class="ice-btn" data-val="去冰">去冰</button>
+          <button class="ice-btn" data-val="熱">熱</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Note -->
+    <div class="form-row">
+      <div class="form-group">
+        <label>備註</label>
+        <input type="text" class="note-input" id="noteInput" placeholder="特殊要求（選填）" />
+      </div>
+    </div>
+
+    <button class="add-btn" onclick="addOrder()">＋ 加入訂單</button>
+  </div>
+
+  <!-- Orders -->
+  <div class="card">
+    <h2>目前訂單</h2>
+    <ul class="order-list" id="orderList">
+      <li class="empty-msg">尚無訂單，請點餐！</li>
+    </ul>
+  </div>
+
+  <!-- Summary -->
+  <div class="card" id="summaryCard" style="display:none;">
+    <div class="summary-header">
+      <h2 style="font-size:1.1rem;color:#4a5568;">訂單匯總</h2>
+      <div>
+        <button class="export-btn" onclick="exportSummary()">📋 複製摘要</button>
+        <button class="clear-btn" onclick="clearAll()">🗑 清除全部</button>
+      </div>
+    </div>
+    <div id="summaryBody"></div>
+    <div class="total-bar">
+      <span>總計</span>
+      <span class="amount" id="totalAmount">$0</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const MENU = {
+  '台灣茶': [
+    { name: '珍珠奶茶', price: 65 },
+    { name: '烏龍綠茶', price: 95 },
+    { name: '玫瑰烏龍', price: 55 },
+    { name: '四季春茶', price: 45 },
+    { name: '茉香綠茶', price: 45 },
+  ],
+  '奶茶系列': [
+    { name: '鮮奶茶', price: 70 },
+    { name: '黑糖鮮奶', price: 75 },
+    { name: '燕麥奶茶', price: 70 },
+    { name: '奶蓋烏龍', price: 80 },
+    { name: '古早味奶茶', price: 60 },
+  ],
+  '水果茶': [
+    { name: '百香果綠茶', price: 65 },
+    { name: '草莓養樂多', price: 75 },
+    { name: '檸檬愛玉', price: 60 },
+    { name: '葡萄柚綠茶', price: 70 },
+    { name: '芒果冰茶', price: 75 },
+  ],
+  '特飲': [
+    { name: '黑糖珍珠拿鐵', price: 90 },
+    { name: '芋頭拿鐵', price: 85 },
+    { name: '抹茶拿鐵', price: 80 },
+    { name: '豆漿豆花', price: 70 },
+    { name: '仙草蜜', price: 55 },
+  ],
+};
+
+MENU['自訂'] = [];
+
+let orders = [];
+let selectedCategory = Object.keys(MENU)[0];
+let selectedDrink = null;
+let selectedSize = 'M';
+let selectedSugar = '少糖';
+let selectedIce = '少冰';
+
+function initMenu() {
+  const tabs = document.getElementById('menuTabs');
+  Object.keys(MENU).forEach(cat => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (cat === selectedCategory ? ' active' : '');
+    btn.textContent = cat;
+    btn.onclick = () => selectCategory(cat);
+    tabs.appendChild(btn);
+  });
+  renderMenuGrid();
+}
+
+function selectCategory(cat) {
+  selectedCategory = cat;
+  selectedDrink = null;
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', Object.keys(MENU)[i] === cat);
+  });
+  document.getElementById('addCustomRow').style.display = cat === '自訂' ? 'flex' : 'none';
+  renderMenuGrid();
+}
+
+function addCustomItem() {
+  const name = document.getElementById('customName').value.trim();
+  const price = parseInt(document.getElementById('customPrice').value);
+  if (!name) { alert('請輸入品項名稱！'); return; }
+  if (isNaN(price) || price < 0) { alert('請輸入有效價格！'); return; }
+  MENU['自訂'].push({ name, price, custom: true });
+  document.getElementById('customName').value = '';
+  document.getElementById('customPrice').value = '';
+  renderMenuGrid();
+}
+
+function removeCustomItem(name) {
+  MENU['自訂'] = MENU['自訂'].filter(i => i.name !== name);
+  if (selectedDrink && selectedDrink.name === name) selectedDrink = null;
+  renderMenuGrid();
+}
+
+function renderMenuGrid() {
+  const grid = document.getElementById('menuGrid');
+  grid.innerHTML = '';
+  MENU[selectedCategory].forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'menu-item' + (item.custom ? ' custom-item' : '') + (selectedDrink && selectedDrink.name === item.name ? ' selected' : '');
+    el.innerHTML = `
+      ${item.custom ? `<button class="remove-custom" onclick="event.stopPropagation();removeCustomItem('${item.name}')">✕</button>` : ''}
+      <div class="item-name">${item.name}</div>
+      <div class="item-price">$${item.price}</div>`;
+    el.onclick = () => selectDrink(item);
+    grid.appendChild(el);
+  });
+}
+
+function selectDrink(item) {
+  selectedDrink = item;
+  renderMenuGrid();
+}
+
+function initToggleGroups() {
+  document.querySelectorAll('#sizeGroup .size-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedSize = btn.dataset.val;
+      document.querySelectorAll('#sizeGroup .size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+  document.querySelectorAll('#sugarGroup .sugar-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedSugar = btn.dataset.val;
+      document.querySelectorAll('#sugarGroup .sugar-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+  document.querySelectorAll('#iceGroup .ice-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedIce = btn.dataset.val;
+      document.querySelectorAll('#iceGroup .ice-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+}
+
+function addOrder() {
+  const person = document.getElementById('personName').value.trim();
+  if (!person) { alert('請填寫訂購人姓名！'); return; }
+  if (!selectedDrink) { alert('請選擇飲料！'); return; }
+
+  const note = document.getElementById('noteInput').value.trim();
+  const price = selectedDrink.price + (selectedSize === 'L' ? 10 : 0);
+
+  orders.push({
+    id: Date.now(),
+    person,
+    drink: selectedDrink.name,
+    size: selectedSize,
+    sugar: selectedSugar,
+    ice: selectedIce,
+    note,
+    price,
+  });
+
+  document.getElementById('noteInput').value = '';
+  selectedDrink = null;
+  renderMenuGrid();
+  renderOrders();
+  renderSummary();
+}
+
+function deleteOrder(id) {
+  orders = orders.filter(o => o.id !== id);
+  renderOrders();
+  renderSummary();
+}
+
+function renderOrders() {
+  const list = document.getElementById('orderList');
+  document.getElementById('orderCount').textContent = orders.length + ' 單';
+
+  if (orders.length === 0) {
+    list.innerHTML = '<li class="empty-msg">尚無訂單，請點餐！</li>';
+    return;
+  }
+
+  list.innerHTML = orders.map(o => `
+    <li class="order-item">
+      <div class="order-item-info">
+        <div class="order-item-person">${o.person}</div>
+        <div class="order-item-name">${o.drink}（${o.size}）</div>
+        <div class="order-item-detail">${o.sugar} / ${o.ice}${o.note ? ' / ' + o.note : ''}</div>
+      </div>
+      <span class="order-item-price">$${o.price}</span>
+      <button class="delete-btn" onclick="deleteOrder(${o.id})">✕</button>
+    </li>
+  `).join('');
+}
+
+function renderSummary() {
+  const card = document.getElementById('summaryCard');
+  const body = document.getElementById('summaryBody');
+
+  if (orders.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+
+  const byPerson = {};
+  let total = 0;
+  orders.forEach(o => {
+    if (!byPerson[o.person]) byPerson[o.person] = [];
+    byPerson[o.person].push(o);
+    total += o.price;
+  });
+
+  body.innerHTML = Object.entries(byPerson).map(([person, items]) => {
+    const subtotal = items.reduce((s, i) => s + i.price, 0);
+    const rows = items.map(i =>
+      `<div class="person-item-row">
+        <span>${i.drink}（${i.size}）${i.sugar}/${i.ice}${i.note ? ' '+i.note : ''}</span>
+        <span>$${i.price}</span>
+      </div>`
+    ).join('');
+    return `<div class="person-group">
+      <div class="person-name">👤 ${person}</div>
+      <div class="person-items">${rows}</div>
+      <div class="person-subtotal">小計：$${subtotal}</div>
+    </div>`;
+  }).join('<hr style="border:none;border-top:1px dashed #e2e8f0;margin:10px 0;">');
+
+  document.getElementById('totalAmount').textContent = '$' + total;
+}
+
+function exportSummary() {
+  const byPerson = {};
+  let total = 0;
+  orders.forEach(o => {
+    if (!byPerson[o.person]) byPerson[o.person] = [];
+    byPerson[o.person].push(o);
+    total += o.price;
+  });
+
+  let text = '=== 飲料訂單 ===\n';
+  Object.entries(byPerson).forEach(([person, items]) => {
+    const subtotal = items.reduce((s, i) => s + i.price, 0);
+    text += `\n【${person}】\n`;
+    items.forEach(i => {
+      text += `  ${i.drink}(${i.size}) ${i.sugar}/${i.ice}${i.note?' '+i.note:''} $${i.price}\n`;
+    });
+    text += `  小計：$${subtotal}\n`;
+  });
+  text += `\n總計：$${total}`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    alert('已複製到剪貼簿！');
+  }).catch(() => {
+    prompt('請複製以下文字：', text);
+  });
+}
+
+function clearAll() {
+  if (!confirm('確定要清除所有訂單？')) return;
+  orders = [];
+  renderOrders();
+  renderSummary();
+}
+
+initMenu();
+initToggleGroups();
+</script>
+</body>
+</html>
