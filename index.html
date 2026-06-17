@@ -310,6 +310,23 @@
 
     .point-text { font-size: 0.88rem; line-height: 1.65; color: #333; }
 
+    /* Illustration preview */
+    .illus-section { margin-top: 22px; }
+    .illus-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .illus-grid img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #e8e8e0;
+      background: #f8f8f5;
+      object-fit: contain;
+      max-height: 200px;
+    }
+    .illus-empty { font-size: 0.82rem; color: #999; }
+
     /* Action buttons */
     .result-actions {
       display: flex; gap: 10px; margin-top: 20px;
@@ -474,6 +491,15 @@
         </div>
         <ul class="points-list" id="pointsList"></ul>
 
+        <!-- Section: Representative illustrations -->
+        <div class="illus-section" id="illusSection" style="display:none;">
+          <div class="section-label">
+            <span class="section-icon">3</span>
+            代表性畫面（將附入報告）
+          </div>
+          <div class="illus-grid" id="illusPreview"></div>
+        </div>
+
         <!-- Actions -->
         <div class="result-actions">
           <button class="btn-report" id="btnReport">
@@ -497,28 +523,58 @@
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
     async function renderPdfFirstPage(base64Data) {
+      const binary = atob(base64Data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const imgs = await renderPdfPages(bytes, [1]);
+      return imgs[0] || null;
+    }
+
+    // 渲染指定頁碼（從 1 起算）為 JPEG dataURL 陣列；無指定則渲染第 1 頁
+    async function renderPdfPages(bytes, pageNumbers) {
+      const out = [];
       try {
-        const binary = atob(base64Data);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.5 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-        return canvas.toDataURL('image/jpeg', 0.85);
+        const total = pdf.numPages;
+        let pages = (Array.isArray(pageNumbers) ? pageNumbers : [])
+          .filter(n => Number.isInteger(n) && n >= 1 && n <= total)
+          .slice(0, 3);
+        if (!pages.length) pages = [1];
+        for (const pn of pages) {
+          const page = await pdf.getPage(pn);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          out.push(canvas.toDataURL('image/jpeg', 0.85));
+        }
       } catch (e) {
         console.warn('PDF render failed:', e);
-        return null;
       }
+      return out;
+    }
+
+    function extractDriveIdClient(url) {
+      const patterns = [/\/file\/d\/([a-zA-Z0-9_-]+)/, /\/d\/([a-zA-Z0-9_-]+)/, /id=([a-zA-Z0-9_-]+)/];
+      for (const p of patterns) { const m = url.match(p); if (m) return m[1]; }
+      return null;
+    }
+
+    function blobToDataURL(blob) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
     }
 
     // State
     let selectedFile = null;
     let activeTab = 'upload';
     let capturedImageBase64 = null;
+    let reportImages = [];
 
     // Elements
     const dropZone    = document.getElementById('dropZone');
@@ -576,6 +632,7 @@
       }
       selectedFile = file;
       capturedImageBase64 = null;
+      reportImages = [];
       hideError(); hideResults();
 
       if (['pdf'].includes(ext)) { fileIcon.textContent = '📄'; fileIcon.className = 'file-icon pdf'; }
@@ -613,7 +670,7 @@
     }
 
     btnRemove.addEventListener('click', () => {
-      selectedFile = null; capturedImageBase64 = null;
+      selectedFile = null; capturedImageBase64 = null; reportImages = [];
       fileInput.value = '';
       filePreview.classList.remove('visible');
       imgWrap.classList.remove('visible');
@@ -633,12 +690,14 @@
     }
 
     btnAgain.addEventListener('click', () => {
-      selectedFile = null; capturedImageBase64 = null;
+      selectedFile = null; capturedImageBase64 = null; reportImages = [];
       fileInput.value = '';
       filePreview.classList.remove('visible');
       imgWrap.classList.remove('visible');
       driveInput.value = '';
       drivePreview.classList.remove('visible');
+      document.getElementById('illusSection').style.display = 'none';
+      schoolInput.value = ''; courseInput.value = '';
       hideResults(); hideError(); updateBtn();
     });
 
@@ -649,6 +708,9 @@
       hideError(); hideResults();
 
       try {
+        let points = [];
+        let illustrationPages = [];
+
         if (activeTab === 'upload') {
           // 直接上傳模式
           const base64 = await toBase64(selectedFile);
@@ -664,7 +726,8 @@
           });
           const data = await resp.json();
           if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
-          showResults(data.points);
+          points = data.points;
+          illustrationPages = data.illustrationPages || [];
 
         } else {
           // Google Drive 模式：背景 function + 輪詢
@@ -679,9 +742,22 @@
 
           // 等待 5 秒後開始輪詢
           await new Promise(r => setTimeout(r, 5000));
-          const points = await pollJobResult(jobId, 150);
-          showResults(points);
+          const result = await pollJobResult(jobId, 150);
+          points = result.points;
+          illustrationPages = result.illustrationPages || [];
         }
+
+        // 擷取代表性畫面（不影響重點分析，失敗也沒關係）
+        loadingMsg.textContent = '正在擷取代表性畫面⋯';
+        try {
+          await buildReportImages(illustrationPages);
+        } catch (e) {
+          console.warn('buildReportImages failed:', e);
+          reportImages = [];
+        }
+
+        showResults(points);
+        renderIllustrationPreview();
 
       } catch (err) {
         showError(err.message || '分析失敗，請稍後再試');
@@ -692,6 +768,59 @@
       }
     });
 
+    // 依插圖頁碼準備報告用的圖片
+    async function buildReportImages(illustrationPages) {
+      reportImages = [];
+
+      // 單張圖片：直接用該圖
+      if (activeTab === 'upload' && selectedFile && selectedFile.type.startsWith('image/')) {
+        if (capturedImageBase64) reportImages = [capturedImageBase64];
+        return;
+      }
+
+      // 上傳的 PDF：用本機檔案渲染指定頁
+      if (activeTab === 'upload' && selectedFile) {
+        const ext = selectedFile.name.split('.').pop().toLowerCase();
+        if (selectedFile.type === 'application/pdf' || ext === 'pdf') {
+          const bytes = new Uint8Array(await selectedFile.arrayBuffer());
+          reportImages = await renderPdfPages(bytes, illustrationPages);
+        }
+        return;
+      }
+
+      // Google Drive：透過串流代理取得檔案後渲染
+      if (activeTab === 'drive') {
+        const id = extractDriveIdClient(driveInput.value.trim());
+        if (!id) return;
+        try {
+          const resp = await fetch(`/.netlify/functions/drive-file?id=${id}`);
+          if (!resp.ok) return;
+          const ct = resp.headers.get('content-type') || '';
+          const buf = await resp.arrayBuffer();
+          if (ct.includes('image/')) {
+            reportImages = [await blobToDataURL(new Blob([buf], { type: ct }))];
+          } else {
+            reportImages = await renderPdfPages(new Uint8Array(buf), illustrationPages);
+          }
+        } catch (e) {
+          console.warn('drive-file fetch/render failed:', e);
+        }
+      }
+    }
+
+    function renderIllustrationPreview() {
+      const sec = document.getElementById('illusSection');
+      const grid = document.getElementById('illusPreview');
+      grid.innerHTML = '';
+      if (!reportImages.length) { sec.style.display = 'none'; return; }
+      reportImages.forEach(src => {
+        const img = document.createElement('img');
+        img.src = src;
+        grid.appendChild(img);
+      });
+      sec.style.display = 'block';
+    }
+
     async function pollJobResult(jobId, maxSeconds) {
       const interval = 5000;
       const maxAttempts = Math.ceil((maxSeconds * 1000) / interval);
@@ -701,7 +830,7 @@
           const resp = await fetch(`/.netlify/functions/job-status?id=${jobId}`);
           if (!resp.ok) continue;
           const data = await resp.json();
-          if (data.status === 'done') return data.points;
+          if (data.status === 'done') return data;
           if (data.status === 'error') throw new Error(data.error || '分析失敗，請重試');
         } catch (e) {
           if (e.message !== '分析失敗，請重試' && !e.message.includes('error')) continue;
@@ -719,8 +848,9 @@
         li.querySelector('.point-text').textContent
       );
       const dateStr = new Date().toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric' });
-      const imgTag = capturedImageBase64
-        ? `<div class="report-img-wrap"><img src="${capturedImageBase64}" alt="代表性內容畫面" /></div>`
+      const imagesHtml = reportImages.length
+        ? `<div class="section-title"><span class="section-dot"></span>代表性內容畫面</div>` +
+          reportImages.map(src => `<div class="report-img-wrap"><img src="${src}" alt="代表性內容畫面" /></div>`).join('')
         : '';
 
       const html = `<!DOCTYPE html>
@@ -746,8 +876,8 @@
   .points-list li { display: flex; gap: 12px; align-items: flex-start; background: #f8f8f5; border: 1px solid #ebebE3; border-radius: 8px; padding: 11px 14px; }
   .num { flex-shrink: 0; width: 22px; height: 22px; background: #6ab04c; color: #fff; font-size: 0.7rem; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
   .pt { font-size: 0.88rem; line-height: 1.65; color: #333; }
-  .report-img-wrap { margin-top: 8px; border-radius: 10px; overflow: hidden; border: 1px solid #e8e8e0; }
-  .report-img-wrap img { width: 100%; max-height: 400px; object-fit: contain; background: #f8f8f5; display: block; }
+  .report-img-wrap { margin-top: 8px; margin-bottom: 12px; border-radius: 10px; overflow: hidden; border: 1px solid #e8e8e0; page-break-inside: avoid; }
+  .report-img-wrap img { width: 100%; max-height: 520px; object-fit: contain; background: #f8f8f5; display: block; }
   .report-footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e8e8e0; font-size: 0.72rem; color: #aaa; text-align: center; }
   @media print { body { padding: 20px; } @page { margin: 1.5cm; } }
 </style>
@@ -773,7 +903,7 @@
     ${points.map((p,i) => `<li><span class="num">${i+1}</span><span class="pt">${escapeHtml(p)}</span></li>`).join('')}
   </ul>
 
-  ${capturedImageBase64 ? `<div class="section-title"><span class="section-dot"></span>代表性內容畫面</div>${imgTag}` : ''}
+  ${imagesHtml}
 
   <div class="report-footer">本報告由文件內容分析系統自動生成 &nbsp;·&nbsp; Powered by Claude AI</div>
   <script>window.onload = () => window.print();<\/script>

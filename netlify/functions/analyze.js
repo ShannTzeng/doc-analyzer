@@ -5,9 +5,12 @@ const ANALYSIS_PROMPT = `請仔細分析這份文件/圖片的內容，提取真
 - 最多10點，但不用湊滿10點
 - 每個重點簡潔清楚，說明核心內容
 - 請用繁體中文回覆
+- 去識別化：若內容出現學生姓名，務必去識別化，例如「王小明」顯示為「王○○」，或以「學生A」「學生B」代稱，切勿呈現完整姓名
+
+另外，請找出文件中「學生繪圖或填答內容最精彩、最具代表性」的頁面，列出頁碼（從第 1 頁開始計算，最多 3 頁）。若文件沒有插圖、只有單張圖片、或無法判斷頁碼，請回傳空陣列。
 
 請以下列 JSON 格式回覆，不要加其他說明文字：
-{"points": ["重點1", "重點2", ...]}`;
+{"points": ["重點1", "重點2", ...], "illustrationPages": [頁碼1, 頁碼2, ...]}`;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -139,8 +142,11 @@ exports.handler = async (event) => {
 
     const parsed = JSON.parse(match[0]);
     const points = (parsed.points || []).filter((p) => p && p.trim());
+    const illustrationPages = Array.isArray(parsed.illustrationPages)
+      ? parsed.illustrationPages.filter((n) => Number.isInteger(n) && n > 0).slice(0, 3)
+      : [];
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ points }) };
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ points, illustrationPages }) };
 
   } catch (err) {
     console.error('Handler error:', err);
