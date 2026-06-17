@@ -555,6 +555,17 @@
       return out;
     }
 
+    function genId() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
     function extractDriveIdClient(url) {
       const patterns = [/\/file\/d\/([a-zA-Z0-9_-]+)/, /\/d\/([a-zA-Z0-9_-]+)/, /id=([a-zA-Z0-9_-]+)/];
       for (const p of patterns) { const m = url.match(p); if (m) return m[1]; }
@@ -732,7 +743,7 @@
         } else {
           // Google Drive 模式：背景 function + 輪詢
           loadingMsg.textContent = '正在下載並分析，大型檔案需要較長時間⋯';
-          const jobId = crypto.randomUUID();
+          const jobId = genId();
 
           await fetch('/.netlify/functions/analyze-large-background', {
             method: 'POST',
