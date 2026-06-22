@@ -203,6 +203,24 @@
     .drive-input:focus { border-color: #6ab04c; }
     .drive-input::placeholder { color: #aaa; }
 
+    .drive-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .drive-row .drive-input { flex: 1; }
+    .drive-remove {
+      flex-shrink: 0; width: 38px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      background: #f8f8f5; border: 1.5px solid #d0d0c8; border-radius: 10px;
+      color: #999; cursor: pointer; transition: all 0.2s;
+    }
+    .drive-remove:hover { color: #e53e3e; border-color: #fca5a5; background: #fee2e2; }
+    .add-link-btn {
+      background: transparent; border: 1.5px dashed #b8d4ac;
+      color: #5a9e3c; border-radius: 10px; padding: 9px 14px;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      width: 100%; transition: all 0.2s; margin-top: 2px;
+    }
+    .add-link-btn:hover { background: #f2f9ee; border-color: #6ab04c; }
+    .add-link-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
     .drive-preview {
       display: none; align-items: center; gap: 8px;
       background: #f0f9ee; border: 1px solid #b8e0a8;
@@ -464,15 +482,26 @@
           <strong>使用說明</strong>
           1. 在 Google 雲端硬碟對檔案按右鍵 → 共用 → 取得連結<br>
           2. 將存取權限設為「<strong>知道連結的人都可以檢視</strong>」<br>
-          3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）
+          3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）<br>
+          4. 可一次分析<strong>多份檔案（最多 6 份）</strong>，系統會合併為「同一課程」分析，適合混年級回饋單
         </div>
-        <input type="url" class="drive-input" id="driveInput"
-          placeholder="貼上 Google Drive 連結，例如 https://drive.google.com/file/d/..." />
+        <div id="driveList">
+          <div class="drive-row">
+            <input type="url" class="drive-input"
+              placeholder="貼上 Google Drive 連結，例如 https://drive.google.com/file/d/..." />
+            <button type="button" class="drive-remove" title="移除此連結">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button type="button" class="add-link-btn" id="addDriveBtn">＋ 新增連結（最多 6 份）</button>
         <div class="drive-preview" id="drivePreview">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#3a7a28" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
-          <span>已偵測到 Google Drive 連結</span>
+          <span id="drivePreviewText">已偵測到連結</span>
         </div>
       </div>
 
@@ -651,8 +680,10 @@
     const btnRemove   = document.getElementById('btnRemove');
     const imgWrap     = document.getElementById('imgPreviewWrap');
     const imgEl       = document.getElementById('imgPreview');
-    const driveInput  = document.getElementById('driveInput');
+    const driveList   = document.getElementById('driveList');
+    const addDriveBtn = document.getElementById('addDriveBtn');
     const drivePreview = document.getElementById('drivePreview');
+    const drivePreviewText = document.getElementById('drivePreviewText');
     const btnAnalyze  = document.getElementById('btnAnalyze');
     const loading     = document.getElementById('loading');
     const loadingMsg  = document.getElementById('loadingMsg');
@@ -745,16 +776,69 @@
       updateBtn(); hideError();
     });
 
-    driveInput.addEventListener('input', () => {
-      const url = driveInput.value.trim();
-      const ok = url.includes('drive.google.com');
-      drivePreview.classList.toggle('visible', ok);
+    // 多連結：收集所有有效的 Google Drive 連結
+    function getDriveUrls() {
+      return Array.from(driveList.querySelectorAll('.drive-input'))
+        .map(inp => inp.value.trim())
+        .filter(u => u.includes('drive.google.com'));
+    }
+
+    function driveRowCount() {
+      return driveList.querySelectorAll('.drive-row').length;
+    }
+
+    // 只有一列時隱藏移除鈕；達上限時停用新增鈕
+    function refreshDriveControls() {
+      const rows = driveList.querySelectorAll('.drive-row');
+      rows.forEach(r => {
+        r.querySelector('.drive-remove').style.display = rows.length > 1 ? 'flex' : 'none';
+      });
+      addDriveBtn.disabled = rows.length >= 6;
+      addDriveBtn.textContent = rows.length >= 6 ? '已達上限（6 份）' : '＋ 新增連結（最多 6 份）';
+    }
+
+    function makeDriveRow() {
+      const row = document.createElement('div');
+      row.className = 'drive-row';
+      row.innerHTML =
+        `<input type="url" class="drive-input" placeholder="貼上 Google Drive 連結，例如 https://drive.google.com/file/d/..." />` +
+        `<button type="button" class="drive-remove" title="移除此連結"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
+      return row;
+    }
+
+    addDriveBtn.addEventListener('click', () => {
+      if (driveRowCount() >= 6) return;
+      driveList.appendChild(makeDriveRow());
+      refreshDriveControls();
+    });
+
+    // 事件委派：輸入更新預覽、點 × 移除該列
+    driveList.addEventListener('input', () => {
+      const n = getDriveUrls().length;
+      drivePreview.classList.toggle('visible', n > 0);
+      if (n > 0) drivePreviewText.textContent = `已偵測到 ${n} 個連結`;
       hideError(); hideResults(); updateBtn();
+    });
+
+    driveList.addEventListener('click', (e) => {
+      const btn = e.target.closest('.drive-remove');
+      if (!btn) return;
+      const rows = driveList.querySelectorAll('.drive-row');
+      if (rows.length <= 1) {
+        btn.closest('.drive-row').querySelector('.drive-input').value = '';
+      } else {
+        btn.closest('.drive-row').remove();
+      }
+      refreshDriveControls();
+      const n = getDriveUrls().length;
+      drivePreview.classList.toggle('visible', n > 0);
+      if (n > 0) drivePreviewText.textContent = `已偵測到 ${n} 個連結`;
+      updateBtn();
     });
 
     function updateBtn() {
       if (activeTab === 'upload') btnAnalyze.disabled = !selectedFile;
-      else btnAnalyze.disabled = !driveInput.value.trim().includes('drive.google.com');
+      else btnAnalyze.disabled = getDriveUrls().length === 0;
     }
 
     btnAgain.addEventListener('click', () => {
@@ -762,7 +846,9 @@
       fileInput.value = '';
       filePreview.classList.remove('visible');
       imgWrap.classList.remove('visible');
-      driveInput.value = '';
+      driveList.innerHTML = '';
+      driveList.appendChild(makeDriveRow());
+      refreshDriveControls();
       drivePreview.classList.remove('visible');
       document.getElementById('illusSection').style.display = 'none';
       schoolInput.value = ''; courseInput.value = '';
@@ -798,28 +884,31 @@
           result = data;
 
         } else {
-          // Google Drive 模式：背景 function + 輪詢
-          loadingMsg.textContent = '正在下載並分析，大型檔案需要較長時間⋯';
+          // Google Drive 模式：背景 function + 輪詢（支援多份）
+          const urls = getDriveUrls();
+          loadingMsg.textContent = urls.length > 1
+            ? `正在下載並合併分析 ${urls.length} 份檔案，請稍候⋯`
+            : '正在下載並分析，大型檔案需要較長時間⋯';
           const jobId = genId();
 
           await fetch('/.netlify/functions/analyze-large-background', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId, driveUrl: driveInput.value.trim() }),
+            body: JSON.stringify({ jobId, driveUrls: urls }),
           });
 
-          // 等待 5 秒後開始輪詢
+          // 等待 5 秒後開始輪詢（多檔需更長時間）
           await new Promise(r => setTimeout(r, 5000));
-          result = await pollJobResult(jobId, 150);
+          result = await pollJobResult(jobId, 270);
         }
 
         analysis = result;
-        const illustrationPages = result.illustrationPages || [];
+        const illustrations = result.illustrations || [];
 
         // 擷取代表性畫面（不影響重點分析，失敗也沒關係）
         loadingMsg.textContent = '正在擷取代表性畫面⋯';
         try {
-          await buildReportImages(illustrationPages);
+          await buildReportImages(illustrations);
         } catch (e) {
           console.warn('buildReportImages failed:', e);
           reportImages = [];
@@ -837,43 +926,56 @@
       }
     });
 
-    // 依插圖頁碼準備報告用的圖片
-    async function buildReportImages(illustrationPages) {
+    // 依插圖資訊 [{file, page}] 準備報告用的圖片
+    async function buildReportImages(illustrations) {
       reportImages = [];
+      const pagesFor = (fileIdx) => illustrations.filter(i => (i.file || 1) === fileIdx).map(i => i.page);
+      const allPages = illustrations.map(i => i.page);
 
-      // 單張圖片：直接用該圖
+      // 上傳模式：單張圖片
       if (activeTab === 'upload' && selectedFile && selectedFile.type.startsWith('image/')) {
         if (capturedImageBase64) reportImages = [capturedImageBase64];
         return;
       }
 
-      // 上傳的 PDF：用本機檔案渲染指定頁
+      // 上傳模式：單份 PDF（只有 1 份檔案，忽略 file 索引）
       if (activeTab === 'upload' && selectedFile) {
         const ext = selectedFile.name.split('.').pop().toLowerCase();
         if (selectedFile.type === 'application/pdf' || ext === 'pdf') {
           const bytes = new Uint8Array(await selectedFile.arrayBuffer());
-          reportImages = await renderPdfPages(bytes, illustrationPages);
+          reportImages = await renderPdfPages(bytes, allPages);
         }
         return;
       }
 
-      // Google Drive：透過串流代理取得檔案後渲染
+      // Google Drive 模式：可能多份，依 file 索引各自取檔渲染
       if (activeTab === 'drive') {
-        const id = extractDriveIdClient(driveInput.value.trim());
-        if (!id) return;
-        try {
-          const resp = await fetch(`/.netlify/functions/drive-file?id=${id}`);
-          if (!resp.ok) return;
-          const ct = resp.headers.get('content-type') || '';
-          const buf = await resp.arrayBuffer();
-          if (ct.includes('image/')) {
-            reportImages = [await blobToDataURL(new Blob([buf], { type: ct }))];
-          } else {
-            reportImages = await renderPdfPages(new Uint8Array(buf), illustrationPages);
+        const urls = getDriveUrls();
+        // 取出有插圖的檔案索引（1 起算）；若 Claude 沒指定，至少處理第 1 份
+        let fileIdxs = Array.from(new Set(illustrations.map(i => i.file || 1)));
+        if (!fileIdxs.length) fileIdxs = urls.length ? [1] : [];
+
+        for (const fileIdx of fileIdxs) {
+          const url = urls[fileIdx - 1];
+          if (!url) continue;
+          const id = extractDriveIdClient(url);
+          if (!id) continue;
+          try {
+            const resp = await fetch(`/.netlify/functions/drive-file?id=${id}`);
+            if (!resp.ok) continue;
+            const ct = resp.headers.get('content-type') || '';
+            const buf = await resp.arrayBuffer();
+            if (ct.includes('image/')) {
+              reportImages.push(await blobToDataURL(new Blob([buf], { type: ct })));
+            } else {
+              const imgs = await renderPdfPages(new Uint8Array(buf), pagesFor(fileIdx));
+              reportImages.push(...imgs);
+            }
+          } catch (e) {
+            console.warn(`drive-file (#${fileIdx}) fetch/render failed:`, e);
           }
-        } catch (e) {
-          console.warn('drive-file fetch/render failed:', e);
         }
+        reportImages = reportImages.slice(0, 3);
       }
     }
 
