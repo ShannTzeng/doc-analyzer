@@ -1,18 +1,61 @@
 import { getStore } from '@netlify/blobs';
 
-const ANALYSIS_PROMPT = `請仔細分析這份文件/圖片的內容，提取真正有價值的重點。
+const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份文件（可能包含學生回饋單、學習單、繪圖、課程記錄等），完成下列任務，並以指定 JSON 格式（繁體中文）回覆。
 
-規則：
-- 只保留真正重要、有實質意義的資訊
-- 最多10點，但不用湊滿10點
-- 每個重點簡潔清楚，說明核心內容
-- 請用繁體中文回覆
-- 去識別化：若內容出現學生姓名，務必去識別化，例如「王小明」顯示為「王○○」，或以「學生A」「學生B」代稱，切勿呈現完整姓名
+共同規則：
+- 條列重點要簡潔、具體、有實質意義，每組最多 8 點，不用湊數。
+- 去識別化：若出現學生姓名，務必去識別化，例如「王小明」顯示為「王○○」或以「學生A」代稱，切勿呈現完整姓名。
 
-另外，請找出文件中「學生繪圖或填答內容最精彩、最具代表性」的頁面，列出頁碼（從第 1 頁開始計算，最多 3 頁）。若文件沒有插圖、只有單張圖片、或無法判斷頁碼，請回傳空陣列。
+【任務 1：回饋分數】
+- 找出回饋單中「我喜歡這堂課嗎？」這類題目的所有學生評分，計算平均填入 likeScore，並指出滿分 likeScale（例如 5）。
+- 找出「課後我對這個主題的了解有幾分呢？」這類題目的評分，計算平均填入 understandScore，滿分填 understandScale。
+- 若文件中找不到對應題目，對應的分數欄位填 null。
 
-請以下列 JSON 格式回覆，不要加其他說明文字：
-{"points": ["重點1", "重點2", ...], "illustrationPages": [頁碼1, 頁碼2, ...]}`;
+【任務 2：三個對象的條列重點】
+- foundation（給基金會）：全面評估本課程的執行成效，涵蓋課程設計、學生參與度、學習成果、亮點與可改進處。
+- school（給學校）：聚焦學生在這堂課的成長與改變。
+- instructor（給講師）：呈現學生在課堂上的收穫、以及對講師課程設計與執行的影響。若有負面回饋（如覺得無聊、無趣），只擷取「有建設性、可供改進」的內容（例如希望課程如何調整），不要單純抱怨。
+
+【任務 3：六大亮能達成評估（competencies）】
+判斷本課程達成了下列哪幾項亮能，只列出「有達成」的。name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力、合作力、探索力、實踐力。每項附一句 evidence 說明本課程如何展現該亮能。
+六大亮能定義：
+- 覺察力：敏銳感受自我與環境變化（自我覺知、環境意識、美感素養）
+- 表達力：將內在想法、情緒或創意轉化為溝通、創作或行動（符號運用與溝通表達、透過創作表達）
+- 驅動力：建立穩定的內在支持，由內而外推動學習的內在動機
+- 合作力：理解他人、建立關係，合作共學共創（人際關係與團隊合作、多元文化理解）
+- 探索力：對未知保持好奇，主動發現選項、勇於提問與嘗試（系統思考解決問題、創新應變）
+- 實踐力：將所學付諸實踐，轉化為生活中真實的行動與選擇（規劃執行、道德實踐與公民意識）
+
+【任務 4：代表性插圖頁碼】
+找出學生繪圖或填答最精彩、最具代表性的頁面頁碼（從第 1 頁起算，最多 3 頁）。若無插圖、只有單張圖片或無法判斷頁碼，回傳空陣列。
+
+只回覆以下 JSON，不要加任何其他文字：
+{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "foundation": ["..."], "school": ["..."], "instructor": ["..."], "competencies": [{"name":"覺察力","evidence":"..."}], "illustrationPages": [頁碼]}`;
+
+const VALID_COMPETENCIES = ['覺察力', '表達力', '驅動力', '合作力', '探索力', '實踐力'];
+
+function normalizeResult(parsed) {
+  const cleanList = (arr) => (Array.isArray(arr) ? arr.filter((p) => typeof p === 'string' && p.trim()) : []);
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v * 10) / 10 : null);
+  const competencies = Array.isArray(parsed.competencies)
+    ? parsed.competencies
+        .filter((c) => c && VALID_COMPETENCIES.includes(c.name))
+        .map((c) => ({ name: c.name, evidence: typeof c.evidence === 'string' ? c.evidence.trim() : '' }))
+    : [];
+  return {
+    likeScore: num(parsed.likeScore),
+    likeScale: num(parsed.likeScale) || 5,
+    understandScore: num(parsed.understandScore),
+    understandScale: num(parsed.understandScale) || 5,
+    foundation: cleanList(parsed.foundation),
+    school: cleanList(parsed.school),
+    instructor: cleanList(parsed.instructor),
+    competencies,
+    illustrationPages: Array.isArray(parsed.illustrationPages)
+      ? parsed.illustrationPages.filter((n) => Number.isInteger(n) && n > 0).slice(0, 3)
+      : [],
+  };
+}
 
 function extractDriveId(url) {
   const patterns = [/\/file\/d\/([a-zA-Z0-9_-]+)/, /\/d\/([a-zA-Z0-9_-]+)/, /id=([a-zA-Z0-9_-]+)/];
@@ -90,7 +133,7 @@ export default async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
+        max_tokens: 3072,
         messages: [{ role: 'user', content: messageContent }],
       }),
     });
@@ -109,11 +152,8 @@ export default async (req) => {
     }
 
     const parsed = JSON.parse(match[0]);
-    const points = (parsed.points || []).filter((p) => p && p.trim());
-    const illustrationPages = Array.isArray(parsed.illustrationPages)
-      ? parsed.illustrationPages.filter((n) => Number.isInteger(n) && n > 0).slice(0, 3)
-      : [];
-    await store.setJSON(jobId, { status: 'done', points, illustrationPages });
+    const result = normalizeResult(parsed);
+    await store.setJSON(jobId, { status: 'done', ...result });
 
   } catch (err) {
     console.error('Background handler error:', err);
