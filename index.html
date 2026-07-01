@@ -363,6 +363,8 @@
     .check-item .ci-text[contenteditable="true"]:hover { background: #fff; box-shadow: inset 0 0 0 1px #dcdcd3; }
     .check-item .ci-text[contenteditable="true"]:focus { background: #fff; box-shadow: 0 0 0 2px #b8e0a8; }
     .ci-page { color: #aaa; font-size: 0.8rem; margin-top: 2px; flex-shrink: 0; }
+    a.ci-page-link { color: #999; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+    a.ci-page-link:hover { color: #5a9e3c; }
     .comp-item { align-items: center; }
     .comp-item img {
       width: 70px; height: 50px; object-fit: contain;
@@ -1173,12 +1175,26 @@
         container.innerHTML = '<div class="ci-empty">（無相關內容）</div>';
         return;
       }
+      const urls = (activeTab === 'drive') ? getDriveUrls() : [];
+      const multi = urls.length > 1;
       items.forEach(item => {
         const text = (item && item.text) || '';
         const page = item && (item.page != null && item.page !== '') ? item.page : null;
+        const file = (item && item.file) || 1;
         const row = document.createElement('div');
         row.className = 'check-item';
-        const pageHtml = page != null ? `<span class="ci-page">（頁${escapeHtml(String(page))}）</span>` : '';
+        let pageHtml = '';
+        if (page != null) {
+          const label = (multi ? `檔案${file} · ` : '') + `頁${escapeHtml(String(page))}`;
+          const url = urls[file - 1];
+          const id = url ? extractDriveIdClient(url) : null;
+          if (id) {
+            const href = `/.netlify/functions/drive-file?id=${id}#page=${encodeURIComponent(page)}`;
+            pageHtml = `<a class="ci-page ci-page-link" href="${href}" target="_blank" rel="noopener" title="開啟原始檔案並跳到此頁">（${label}）</a>`;
+          } else {
+            pageHtml = `<span class="ci-page">（${label}）</span>`;
+          }
+        }
         row.innerHTML = `<input type="checkbox" checked><span class="ci-text" contenteditable="true" spellcheck="false">${escapeHtml(text)}</span>${pageHtml}`;
         container.appendChild(row);
       });
