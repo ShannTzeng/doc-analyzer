@@ -350,14 +350,19 @@
     .check-item {
       display: flex; gap: 10px; align-items: flex-start;
       background: #f8f8f5; border: 1px solid #ebebE3;
-      border-radius: 10px; padding: 11px 13px; cursor: pointer;
+      border-radius: 10px; padding: 11px 13px;
     }
     .check-item input[type="checkbox"] {
-      margin-top: 2px; width: 16px; height: 16px;
+      margin-top: 3px; width: 16px; height: 16px;
       accent-color: #6ab04c; flex-shrink: 0; cursor: pointer;
     }
-    .check-item .ci-text { font-size: 0.88rem; line-height: 1.6; color: #333; }
-    .ci-page { color: #aaa; font-size: 0.8rem; }
+    .check-item .ci-text { flex: 1; font-size: 0.88rem; line-height: 1.6; color: #333; }
+    .check-item .ci-text[contenteditable="true"] {
+      cursor: text; outline: none; border-radius: 5px; padding: 1px 5px; transition: box-shadow 0.15s, background 0.15s;
+    }
+    .check-item .ci-text[contenteditable="true"]:hover { background: #fff; box-shadow: inset 0 0 0 1px #dcdcd3; }
+    .check-item .ci-text[contenteditable="true"]:focus { background: #fff; box-shadow: 0 0 0 2px #b8e0a8; }
+    .ci-page { color: #aaa; font-size: 0.8rem; margin-top: 2px; flex-shrink: 0; }
     .comp-item { align-items: center; }
     .comp-item img {
       width: 70px; height: 50px; object-fit: contain;
@@ -582,7 +587,7 @@
         </div>
 
         <!-- Actions -->
-        <div class="report-hint">勾選要放入報告的項目（預設全選），再選擇要產生哪一份報告：</div>
+        <div class="report-hint">勾選要放入報告的項目（預設全選）；如發現擷取有誤，可<strong>直接點文字修改</strong>。完成後選擇要產生哪一份報告：</div>
         <div class="result-actions report-actions">
           <button class="btn-report" data-audience="foundation">生成基金會報告</button>
           <button class="btn-report" data-audience="school">生成學校報告</button>
@@ -1019,7 +1024,8 @@
     function getCheckedTexts(container) {
       return Array.from(container.querySelectorAll('.check-item'))
         .filter(it => it.querySelector('input[type="checkbox"]').checked)
-        .map(it => it.dataset.text || it.querySelector('.ci-text').textContent);
+        .map(it => it.querySelector('.ci-text').textContent.trim())
+        .filter(t => t);
     }
 
     function getCheckedCompetencies() {
@@ -1160,12 +1166,11 @@
       items.forEach(item => {
         const text = (item && item.text) || '';
         const page = item && (item.page != null && item.page !== '') ? item.page : null;
-        const label = document.createElement('label');
-        label.className = 'check-item';
-        label.dataset.text = text;
-        const pageHtml = page != null ? ` <span class="ci-page">（頁${escapeHtml(String(page))}）</span>` : '';
-        label.innerHTML = `<input type="checkbox" checked><span class="ci-text">${escapeHtml(text)}${pageHtml}</span>`;
-        container.appendChild(label);
+        const row = document.createElement('div');
+        row.className = 'check-item';
+        const pageHtml = page != null ? `<span class="ci-page">（頁${escapeHtml(String(page))}）</span>` : '';
+        row.innerHTML = `<input type="checkbox" checked><span class="ci-text" contenteditable="true" spellcheck="false">${escapeHtml(text)}</span>${pageHtml}`;
+        container.appendChild(row);
       });
     }
 
