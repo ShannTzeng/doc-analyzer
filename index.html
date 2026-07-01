@@ -1189,7 +1189,7 @@
           const url = urls[file - 1];
           const id = url ? extractDriveIdClient(url) : null;
           if (id) {
-            const href = `/.netlify/functions/drive-file?id=${id}#page=${encodeURIComponent(page)}`;
+            const href = `/.netlify/functions/drive-file?id=${id}&view=pdf#page=${encodeURIComponent(page)}`;
             pageHtml = `<a class="ci-page ci-page-link" href="${href}" target="_blank" rel="noopener" title="開啟原始檔案並跳到此頁">（${label}）</a>`;
           } else {
             pageHtml = `<span class="ci-page">（${label}）</span>`;

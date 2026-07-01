@@ -2,6 +2,7 @@
 export default async (req) => {
   const url = new URL(req.url);
   const id = url.searchParams.get('id');
+  const view = url.searchParams.get('view'); // view=pdf → 瀏覽器直接內嵌顯示
 
   if (!id) {
     return new Response('missing id', { status: 400 });
@@ -20,11 +21,16 @@ export default async (req) => {
       return new Response('file not accessible', { status: 403 });
     }
 
+    // view=pdf：強制以 PDF 內嵌顯示（供頁碼連結在新分頁開啟、跳頁）
+    const outType = view === 'pdf' ? 'application/pdf' : contentType;
+
     // 直接把上游串流回傳，避免緩衝整個大檔、也避開同步回應大小限制
     return new Response(driveRes.body, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
+        'Content-Type': outType,
+        // inline 讓瀏覽器直接開啟顯示，而不是下載
+        'Content-Disposition': 'inline',
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'no-store',
       },
