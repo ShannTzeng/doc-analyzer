@@ -1030,8 +1030,11 @@
 
     function generateReport(audience) {
       const titles = { foundation: '基金會課程成效報告', school: '學校課程成果報告', instructor: '講師課程回饋報告' };
+      const suffixes = { foundation: '基金會', school: '學校', instructor: '講師' };
       const lists = { foundation: foundationListEl, school: schoolListEl, instructor: instructorListEl };
       const reportTitle = titles[audience] || '課程分析報告';
+      // 下載 PDF 的檔名由 <title> 決定
+      const fileTitle = '課程分析報告_' + (suffixes[audience] || '');
 
       const school = schoolInput.value.trim() || '（未填寫）';
       const course = courseInput.value.trim() || '（未填寫）';
@@ -1070,7 +1073,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>課程分析報告</title>
+<title>${fileTitle}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif; color: #1a1a1a; background: #fff; padding: 40px; max-width: 800px; margin: 0 auto; }
