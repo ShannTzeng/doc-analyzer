@@ -301,6 +301,8 @@
     }
     .field-group input:focus { border-color: #6ab04c; }
     .field-group input::placeholder { color: #bbb; }
+    .field-group .req { color: #e53e3e; font-weight: 700; }
+    .field-group input.invalid { border-color: #e53e3e; background: #fef2f2; }
 
     /* Points list */
     .points-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
@@ -541,12 +543,32 @@
         </div>
         <div class="report-meta">
           <div class="field-group">
-            <label>執行學校</label>
-            <input type="text" id="schoolInput" placeholder="例：台北市立國小" />
+            <label>學年度 <span class="req">*</span></label>
+            <input type="text" id="yearInput" placeholder="例：113" />
           </div>
           <div class="field-group">
-            <label>課程名稱</label>
+            <label>學期 <span class="req">*</span></label>
+            <input type="text" id="termInput" placeholder="例：1" />
+          </div>
+          <div class="field-group">
+            <label>縣市 <span class="req">*</span></label>
+            <input type="text" id="countyInput" placeholder="例：嘉義縣" />
+          </div>
+          <div class="field-group">
+            <label>執行學校 <span class="req">*</span></label>
+            <input type="text" id="schoolInput" placeholder="例：太興國小" />
+          </div>
+          <div class="field-group">
+            <label>課程名稱 <span class="req">*</span></label>
             <input type="text" id="courseInput" placeholder="例：生命科學探索課程" />
+          </div>
+          <div class="field-group">
+            <label>講師名稱 <span class="req">*</span></label>
+            <input type="text" id="instructorInput" placeholder="例：王小明" />
+          </div>
+          <div class="field-group">
+            <label>課程對象（自動偵測，可修改）</label>
+            <input type="text" id="audienceInput" placeholder="例：一～六年級" />
           </div>
           <div class="field-group">
             <label>學生喜歡程度（平均）</label>
@@ -704,8 +726,13 @@
     const errorMsg    = document.getElementById('errorMsg');
     const results     = document.getElementById('results');
     const btnAgain    = document.getElementById('btnAgain');
+    const yearInput   = document.getElementById('yearInput');
+    const termInput   = document.getElementById('termInput');
+    const countyInput = document.getElementById('countyInput');
     const schoolInput = document.getElementById('schoolInput');
     const courseInput = document.getElementById('courseInput');
+    const instructorInput = document.getElementById('instructorInput');
+    const audienceInput = document.getElementById('audienceInput');
     const likeInput   = document.getElementById('likeInput');
     const understandInput = document.getElementById('understandInput');
     const compListEl  = document.getElementById('compList');
@@ -865,8 +892,8 @@
       refreshDriveControls();
       drivePreview.classList.remove('visible');
       document.getElementById('illusSection').style.display = 'none';
-      schoolInput.value = ''; courseInput.value = '';
-      likeInput.value = ''; understandInput.value = '';
+      [yearInput, termInput, countyInput, schoolInput, courseInput, instructorInput, audienceInput, likeInput, understandInput]
+        .forEach(el => { el.value = ''; el.classList.remove('invalid'); });
       analysis = null;
       hideResults(); hideError(); updateBtn();
     });
@@ -1046,16 +1073,51 @@
         }));
     }
 
+    // 必填欄位驗證
+    function validateRequired() {
+      const required = [
+        [yearInput, '學年度'], [termInput, '學期'], [countyInput, '縣市'],
+        [schoolInput, '執行學校'], [courseInput, '課程名稱'], [instructorInput, '講師名稱'],
+      ];
+      const missing = [];
+      required.forEach(([el, name]) => {
+        if (!el.value.trim()) { el.classList.add('invalid'); missing.push(name); }
+        else el.classList.remove('invalid');
+      });
+      if (missing.length) {
+        showError('請先填寫必填欄位：' + missing.join('、'));
+        return false;
+      }
+      hideError();
+      return true;
+    }
+
+    function sanitizeFilename(s) { return s.replace(/[\\/:*?"<>|\n\r]/g, '').trim(); }
+
+    // 檔名格式：(學年度)-(學期)_(縣市)(學校)_(課程)_(講師)_學生回饋分析報告
+    function buildBaseName() {
+      return sanitizeFilename(
+        `${yearInput.value.trim()}-${termInput.value.trim()}_${countyInput.value.trim()}${schoolInput.value.trim()}_${courseInput.value.trim()}_${instructorInput.value.trim()}_學生回饋分析報告`
+      );
+    }
+
     function generateReport(audience) {
+      if (!validateRequired()) return;
+
       const titles = { foundation: '基金會課程成效報告', school: '學校課程成果報告', instructor: '講師課程回饋報告' };
       const suffixes = { foundation: '基金會', school: '學校', instructor: '講師' };
       const lists = { foundation: foundationListEl, school: schoolListEl, instructor: instructorListEl };
       const reportTitle = titles[audience] || '課程分析報告';
-      // 下載 PDF 的檔名由 <title> 決定
-      const fileTitle = '課程分析報告_' + (suffixes[audience] || '');
+      // 下載檔名：檔名格式 + 對象
+      const pdfName = buildBaseName() + '_' + (suffixes[audience] || '');
 
-      const school = schoolInput.value.trim() || '（未填寫）';
-      const course = courseInput.value.trim() || '（未填寫）';
+      const county = countyInput.value.trim();
+      const school = county + schoolInput.value.trim();   // 縣市 + 學校
+      const course = courseInput.value.trim();
+      const year = yearInput.value.trim();
+      const term = termInput.value.trim();
+      const instructor = instructorInput.value.trim();
+      const audienceStr = audienceInput.value.trim() || '—';
       const dateStr = new Date().toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric' });
       const likeStr = likeInput.value.trim() ? `${escapeHtml(likeInput.value.trim())} / ${likeScaleState}` : '—';
       const understandStr = understandInput.value.trim() ? `${escapeHtml(understandInput.value.trim())} / ${understandScaleState}` : '—';
@@ -1091,7 +1153,8 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>${fileTitle}</title>
+<title>${escapeHtml(pdfName)}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans TC', sans-serif; color: #1a1a1a; background: #fff; padding: 40px; max-width: 800px; margin: 0 auto; }
@@ -1136,6 +1199,9 @@
   <div class="meta-grid">
     <div class="meta-card"><div class="label">執行學校</div><div class="value">${escapeHtml(school)}</div></div>
     <div class="meta-card"><div class="label">課程名稱</div><div class="value">${escapeHtml(course)}</div></div>
+    <div class="meta-card"><div class="label">學年度・學期</div><div class="value">${escapeHtml(year)} 學年度 第 ${escapeHtml(term)} 學期</div></div>
+    <div class="meta-card"><div class="label">講師</div><div class="value">${escapeHtml(instructor)}</div></div>
+    <div class="meta-card"><div class="label">課程對象</div><div class="value">${escapeHtml(audienceStr)}</div></div>
     <div class="meta-card"><div class="label">學生喜歡程度</div><div class="value">${likeStr}</div></div>
     <div class="meta-card"><div class="label">學生理解程度</div><div class="value">${understandStr}</div></div>
   </div>
@@ -1144,7 +1210,27 @@
   ${page2Html}
 
   <div class="report-footer">本報告由文件內容分析系統自動生成 &nbsp;·&nbsp; Powered by Claude AI</div>
-  <script>window.onload = () => window.print();<\/script>
+  <script>
+    window.onload = function () {
+      setTimeout(function () {
+        var opt = {
+          margin: [10, 10, 12, 10],
+          filename: ${JSON.stringify(pdfName + '.pdf')},
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        };
+        if (window.html2pdf) {
+          html2pdf().set(opt).from(document.body).save().then(function () {
+            setTimeout(function () { window.close(); }, 800);
+          });
+        } else {
+          window.print(); // 備援：萬一 html2pdf 載入失敗
+        }
+      }, 400);
+    };
+  <\/script>
 </body>
 </html>`;
 
@@ -1160,6 +1246,7 @@
       understandInput.value = analysis.understandScore != null ? analysis.understandScore : '';
       likeScaleState = analysis.likeScale || 5;
       understandScaleState = analysis.understandScale || 5;
+      if (analysis.audience && !audienceInput.value.trim()) audienceInput.value = analysis.audience;
 
       renderCheckList(foundationListEl, analysis.foundation);
       renderCheckList(schoolListEl, analysis.school);

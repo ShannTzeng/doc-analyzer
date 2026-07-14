@@ -32,8 +32,11 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 【任務 4：代表性插圖】
 找出學生繪圖或填答最精彩、最具代表性的頁面，每項為 {"file": 第幾份檔案, "page": 該檔案中的頁碼}（兩者皆從 1 起算），最多 3 項。文件可能有多份（標記為【第N份檔案】），請正確標出 file。只有一份檔案時 file 一律填 1。若無插圖或無法判斷，回傳空陣列。
 
+【任務 5：課程對象】
+從回饋單或文件內容判斷這堂課的參與年級／對象，例如「一～六年級」「三、四年級」「五年級」。填入 audience（字串）。若無法判斷，填空字串 ""。
+
 只回覆以下 JSON，不要加任何其他文字：
-{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
+{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -78,6 +81,7 @@ function normalizeResult(parsed) {
     likeScale: num(parsed.likeScale) || 5,
     understandScore: num(parsed.understandScore),
     understandScale: num(parsed.understandScale) || 5,
+    audience: typeof parsed.audience === 'string' ? parsed.audience.trim() : '',
     foundation: cleanItems(parsed.foundation),
     school: cleanItems(parsed.school),
     instructor: cleanItems(parsed.instructor),
