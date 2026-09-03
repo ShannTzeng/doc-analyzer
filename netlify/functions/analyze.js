@@ -5,9 +5,9 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 - 去識別化：若出現學生姓名，務必去識別化，例如「王小明」顯示為「王○○」或以「學生A」代稱，切勿呈現完整姓名。
 
 【任務 1：回饋分數】
-- 找出回饋單中「我喜歡這堂課嗎？」這類題目的所有學生評分，計算平均填入 likeScore，並指出滿分 likeScale（例如 5）。
-- 找出「課後我對這個主題的了解有幾分呢？」這類題目的評分，計算平均填入 understandScore，滿分填 understandScale。
-- 若文件中找不到對應題目，對應的分數欄位填 null。
+- 喜歡程度：找出「我喜歡這堂課嗎？」這類題目。若為文字選項（如：超級喜歡／喜歡／還好／不太喜歡），依 超級喜歡=4、喜歡=3、還好=2、不太喜歡=1 換算後計算全體學生平均，填入 likeScore，likeScale 填 4。若為數字評分題則直接平均，likeScale 填該題滿分。
+- 理解程度：找出「關於老師上課的內容，我聽懂多少呢？」或「課後我對這個主題的了解有幾分呢？」這類題目。若為文字選項（如：全部聽懂／大部分聽懂／聽懂一點點／幾乎沒聽懂），依 全部聽懂=4、大部分聽懂=3、聽懂一點點=2、幾乎沒聽懂=1 換算後平均，填入 understandScore，understandScale 填 4。數字題則直接平均並填該題滿分。
+- 平均值取到小數一位。未作答者不列入計算。若文件中找不到對應題目，對應的分數欄位填 null。
 
 【任務 2：三個對象的條列重點】
 針對下列三個對象分別整理條列重點。每一點都是一個物件 {"text": 重點內容, "page": 頁碼, "file": 第幾份檔案}：
@@ -19,8 +19,18 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 - school（給學校）：聚焦學生在這堂課的成長與改變。
 - instructor（給講師）：呈現學生在課堂上的收穫、以及對講師課程設計與執行的影響。若有負面回饋（如覺得無聊、無趣），只擷取「有建設性、可供改進」的內容（例如希望課程如何調整），不要單純抱怨。
 
-【任務 3：六大亮能達成評估（competencies）】
-判斷本課程達成了下列哪幾項亮能，只列出「有達成」的。name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力、合作力、探索力、實踐力。每項附一句 evidence 說明本課程如何展現該亮能。
+【任務 3：六大亮能統計（competencies）】
+name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力、合作力、探索力、實踐力。
+
+情況 A — 新版學習單（每位學生對六大亮能各有一題自評，選項：很像我／有點像我／不太像我／很不像我／我不確定）：
+- 換算：很像我=4、有點像我=3、不太像我=2、很不像我=1。
+- 圈「我不確定」（或「我不知道」等類似選項）的學生：不得計為 0 分，必須直接從「該亮能」的統計樣本中排除，不列入平均。因此各亮能的有效樣本數可能不同。未作答者同樣排除。
+- 每個亮能回傳：name、avg（有效樣本平均，取到小數一位）、n（有效樣本數）、excluded（圈「我不確定」的人數）、evidence（一句話描述學生在該亮能的具體表現，盡量引用學習單內容佐證）。
+- 六個亮能只要有作答資料就都要列出；某亮能完全沒有有效樣本時 avg 填 null。
+
+情況 B — 舊版回饋單（沒有亮能自評題）：
+改為從課程內容推論，只列出「有達成」的亮能，avg、n、excluded 皆填 null，evidence 說明本課程如何展現該亮能。
+
 六大亮能定義：
 - 覺察力：敏銳感受自我與環境變化（自我覺知、環境意識、美感素養）
 - 表達力：將內在想法、情緒或創意轉化為溝通、創作或行動（符號運用與溝通表達、透過創作表達）
@@ -36,7 +46,7 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 從回饋單或文件內容判斷這堂課的參與年級／對象，例如「一～六年級」「三、四年級」「五年級」。填入 audience（字串）。若無法判斷，填空字串 ""。
 
 只回覆以下 JSON，不要加任何其他文字：
-{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
+{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","avg":3.4,"n":18,"excluded":2,"evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -73,7 +83,13 @@ function normalizeResult(parsed) {
   const competencies = Array.isArray(parsed.competencies)
     ? parsed.competencies
         .filter((c) => c && VALID_COMPETENCIES.includes(c.name))
-        .map((c) => ({ name: c.name, evidence: typeof c.evidence === 'string' ? c.evidence.trim() : '' }))
+        .map((c) => ({
+          name: c.name,
+          evidence: typeof c.evidence === 'string' ? c.evidence.trim() : '',
+          avg: typeof c.avg === 'number' && isFinite(c.avg) ? Math.round(c.avg * 10) / 10 : null,
+          n: Number.isInteger(c.n) && c.n >= 0 ? c.n : null,
+          excluded: Number.isInteger(c.excluded) && c.excluded >= 0 ? c.excluded : null,
+        }))
     : [];
 
   return {
