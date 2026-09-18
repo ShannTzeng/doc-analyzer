@@ -3,6 +3,8 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 共同規則：
 - 條列重點要簡潔、具體、有實質意義，每組最多 8 點，不用湊數。
 - 去識別化：若出現學生姓名，務必去識別化，例如「王小明」顯示為「王○○」或以「學生A」代稱，切勿呈現完整姓名。
+- 學習單可能是「注音版」，國字旁邊會有注音符號（ㄅㄆㄇ）。請忽略注音、只讀國字與學生填答內容。
+- 學生的開放式填答（例如「我覺得這堂課我自己做得很不錯的地方是…？」「記下這堂課最棒的回憶」等手寫內容）是重要的質性素材，請優先引用這些學生原話（去識別化後）來佐證分析。
 
 【任務 1：回饋分數】
 - 喜歡程度：找出「我喜歡這堂課嗎？」這類題目。若為文字選項（如：超級喜歡／喜歡／還好／不太喜歡），依 超級喜歡=4、喜歡=3、還好=2、不太喜歡=1 換算後計算全體學生平均，填入 likeScore，likeScale 填 4。若為數字評分題則直接平均，likeScale 填該題滿分。
@@ -21,6 +23,7 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 
 【任務 3：六大亮能統計（competencies）】
 name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力、合作力、探索力、實踐力。
+⚠️ 注意：學習單上的標籤可能省略「力」字，只印出「覺察／表達／驅動／合作／探索／實踐」，也可能寫成「覺察力」等完整名稱。無論學習單上怎麼印，回傳的 name 一律使用上面六個「完整名稱」（含「力」字）。
 
 情況 A — 新版學習單（每位學生對六大亮能各有一題自評，選項：很像我／有點像我／不太像我／很不像我／我不確定）：
 - 換算：很像我=4、有點像我=3、不太像我=2、很不像我=1。
@@ -57,6 +60,16 @@ const CORS = {
 
 const VALID_COMPETENCIES = ['覺察力', '表達力', '驅動力', '合作力', '探索力', '實踐力'];
 
+// 學習單上可能只印「覺察」不印「覺察力」，統一正規化成完整名稱
+function normalizeCompetencyName(raw) {
+  if (typeof raw !== 'string') return null;
+  const name = raw.trim();
+  if (VALID_COMPETENCIES.includes(name)) return name;
+  const withForce = name + '力';
+  if (VALID_COMPETENCIES.includes(withForce)) return withForce;
+  return null;
+}
+
 function normalizeResult(parsed) {
   const num = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v * 10) / 10 : null);
   const pageRe = /[（(][^（()）]*(?:頁|页|page|p\.?)[^（()）]*\d[^（()）]*[)）]\s*$/i;
@@ -82,7 +95,8 @@ function normalizeResult(parsed) {
 
   const competencies = Array.isArray(parsed.competencies)
     ? parsed.competencies
-        .filter((c) => c && VALID_COMPETENCIES.includes(c.name))
+        .map((c) => (c ? { ...c, name: normalizeCompetencyName(c.name) } : null))
+        .filter((c) => c && c.name)
         .map((c) => ({
           name: c.name,
           evidence: typeof c.evidence === 'string' ? c.evidence.trim() : '',
