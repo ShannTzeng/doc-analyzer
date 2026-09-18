@@ -1,0 +1,9 @@
+# Local Netlify folder
+.netlify
+
+# Dependencies (Netlify 會在建置時自行安裝)
+node_modules
+package-lock.json
+
+# macOS
+.DS_Store
