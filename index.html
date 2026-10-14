@@ -203,6 +203,14 @@
     }
     .upload-total.visible { display: block; }
     .upload-total.over { background: #fef6ec; border-color: #f0c38e; color: #9a5b16; }
+    .count-note {
+      display: none; margin: -8px 0 20px; padding: 10px 14px;
+      border-radius: 10px; font-size: 0.8rem; line-height: 1.7;
+      background: #f6f6f2; border: 1px solid #e8e8e0; color: #666;
+    }
+    .count-note.visible { display: block; }
+    .count-note.over { background: #fef6ec; border-color: #f0c38e; color: #9a5b16; }
+    .count-note .warn { color: #c17d2a; font-weight: 600; }
 
     .img-preview-wrap {
       display: none; margin-top: 12px;
@@ -403,6 +411,8 @@
     }
     .comp-item .ci-name { font-weight: 700; color: #2b4a25; }
     .comp-item .comp-stat { font-size: 0.78rem; color: #888; }
+    .comp-item .comp-dist { font-size: 0.74rem; color: #aaa; }
+    .comp-item .warn { color: #c17d2a; font-weight: 600; }
     .comp-ev-edit[contenteditable="true"] {
       display: inline-block; cursor: text; outline: none;
       border-radius: 5px; padding: 1px 5px; margin-top: 2px;
@@ -595,6 +605,7 @@
             <input type="text" id="understandInput" placeholder="—" />
           </div>
         </div>
+        <div class="count-note" id="countNote"></div>
 
         <!-- Section 2: Competencies -->
         <div class="section-label">
@@ -1579,6 +1590,29 @@
       understandScaleState = analysis.understandScale || 5;
       if (analysis.audience && !audienceInput.value.trim()) audienceInput.value = analysis.audience;
 
+      // 顯示清點結果，方便人工核對數字是否正確
+      const noteEl = document.getElementById('countNote');
+      const parts = [];
+      if (analysis.studentCount) parts.push(`本次共判讀 ${analysis.studentCount} 份學習單`);
+      if (analysis.likeCounts) {
+        parts.push('喜歡程度：' + ['超級喜歡','喜歡','還好','不太喜歡']
+          .map(k => `${k} ${Number(analysis.likeCounts[k]) || 0}`).join('・'));
+      }
+      if (analysis.understandCounts) {
+        parts.push('聽懂程度：' + ['全部聽懂','大部分聽懂','聽懂一點點','幾乎沒聽懂']
+          .map(k => `${k} ${Number(analysis.understandCounts[k]) || 0}`).join('・'));
+      }
+      const bad = analysis.likeMismatch || analysis.understandMismatch
+        || (analysis.competencies || []).some(c => c.mismatch);
+      if (parts.length) {
+        noteEl.innerHTML = parts.join('<br>')
+          + (bad ? '<br><span class="warn">⚠️ 部分題目的清點人數與總份數不符，數字可能有誤，建議人工核對</span>' : '');
+        noteEl.classList.add('visible');
+        noteEl.classList.toggle('over', bad);
+      } else {
+        noteEl.classList.remove('visible', 'over');
+      }
+
       renderCheckList(foundationListEl, analysis.foundation);
       renderCheckList(schoolListEl, analysis.school);
       renderCheckList(instructorListEl, analysis.instructor);
@@ -1632,9 +1666,18 @@
         if (c.avg != null) row.dataset.avg = c.avg;
         if (c.n != null) row.dataset.n = c.n;
         if (c.excluded != null) row.dataset.excluded = c.excluded;
-        const statHtml = (c.avg != null && c.n != null)
-          ? `<span class="comp-stat">平均 ${c.avg} / 4 ・ 有效樣本 ${c.n} 人${c.excluded ? `（排除「我不確定」${c.excluded} 人）` : ''}</span><br>`
-          : '';
+        let statHtml = '';
+        if (c.avg != null && c.n != null) {
+          const dist = c.counts
+            ? ['很像我','有點像我','不太像我','很不像我','我不確定']
+                .map(k => `${k} ${Number(c.counts[k]) || 0}`).join('・')
+            : '';
+          statHtml = `<span class="comp-stat">平均 ${c.avg} / 4 ・ 有效樣本 ${c.n} 人`
+            + `${c.excluded ? `（排除「我不確定」${c.excluded} 人）` : ''}`
+            + `${c.mismatch ? '<span class="warn"> ⚠️ 人數與總份數不符，建議人工核對</span>' : ''}</span>`
+            + (dist ? `<br><span class="comp-dist">${dist}</span>` : '')
+            + `<br>`;
+        }
         row.innerHTML = `<input type="checkbox" checked>` +
           (img ? `<img src="${img}" alt="${c.name}">` : '') +
           `<span class="ci-text"><span class="ci-name">${c.name}</span><br>` +

@@ -6,10 +6,18 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 - 學習單可能是「注音版」，國字旁邊會有注音符號（ㄅㄆㄇ）。請忽略注音、只讀國字與學生填答內容。
 - 學生的開放式填答（例如「我覺得這堂課我自己做得很不錯的地方是…？」「記下這堂課最棒的回憶」等手寫內容）是重要的質性素材，請優先引用這些學生原話（去識別化後）來佐證分析。
 
-【任務 1：回饋分數】
-- 喜歡程度：找出「我喜歡這堂課嗎？」這類題目。若為文字選項（如：超級喜歡／喜歡／還好／不太喜歡），依 超級喜歡=4、喜歡=3、還好=2、不太喜歡=1 換算後計算全體學生平均，填入 likeScore，likeScale 填 4。若為數字評分題則直接平均，likeScale 填該題滿分。
-- 理解程度：找出「關於老師上課的內容，我聽懂多少呢？」或「課後我對這個主題的了解有幾分呢？」這類題目。若為文字選項（如：全部聽懂／大部分聽懂／聽懂一點點／幾乎沒聽懂），依 全部聽懂=4、大部分聽懂=3、聽懂一點點=2、幾乎沒聽懂=1 換算後平均，填入 understandScore，understandScale 填 4。數字題則直接平均並填該題滿分。
-- 平均值取到小數一位。未作答者不列入計算。若文件中找不到對應題目，對應的分數欄位填 null。
+【任務 1：回饋分數 —— 請「逐份清點人數」，不要自己算平均】
+⚠️ 非常重要：不要自己做任何加總、平均或四捨五入的計算。你只需要**清點各選項各有幾人**，系統會自動精確換算。
+
+- studentCount：本次文件總共有幾位學生（幾份學習單）。
+- like（題目「我喜歡這堂課嗎？」）：清點各選項人數，鍵為 超級喜歡、喜歡、還好、不太喜歡、未作答。
+- understand（題目「關於老師上課的內容，我聽懂多少呢？」或「課後我對這個主題的了解有幾分呢？」）：清點各選項人數，鍵為 全部聽懂、大部分聽懂、聽懂一點點、幾乎沒聽懂、未作答。
+
+清點方法（請務必遵守）：
+1. 逐份學習單檢視，確認「這一份」圈選的是哪一個選項。
+2. 全部看完後再加總各選項人數。
+3. 自我檢查：各選項人數相加必須正好等於 studentCount。若對不上，請重新清點。
+若文件中沒有該題，該物件的數字全部填 0。
 
 【任務 2：三個對象的條列重點】
 針對下列三個對象分別整理條列重點。每一點都是一個物件 {"text": 重點內容, "page": 頁碼, "file": 第幾份檔案}：
@@ -25,14 +33,17 @@ const ANALYSIS_PROMPT = `你是教育課程分析專家。請仔細分析這份�
 name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力、合作力、探索力、實踐力。
 ⚠️ 注意：學習單上的標籤可能省略「力」字，只印出「覺察／表達／驅動／合作／探索／實踐」，也可能寫成「覺察力」等完整名稱。無論學習單上怎麼印，回傳的 name 一律使用上面六個「完整名稱」（含「力」字）。
 
+⚠️ 同樣地：**不要自己計算平均、也不要自行排除樣本**。只要逐份清點人數，系統會依規則精確換算。
+
 情況 A — 新版學習單（每位學生對六大亮能各有一題自評，選項：很像我／有點像我／不太像我／很不像我／我不確定）：
-- 換算：很像我=4、有點像我=3、不太像我=2、很不像我=1。
-- 圈「我不確定」（或「我不知道」等類似選項）的學生：不得計為 0 分，必須直接從「該亮能」的統計樣本中排除，不列入平均。因此各亮能的有效樣本數可能不同。未作答者同樣排除。
-- 每個亮能回傳：name、avg（有效樣本平均，取到小數一位）、n（有效樣本數）、excluded（圈「我不確定」的人數）、evidence（一句話描述學生在該亮能的具體表現，盡量引用學習單內容佐證）。
-- 六個亮能只要有作答資料就都要列出；某亮能完全沒有有效樣本時 avg 填 null。
+- 每個亮能回傳 counts：清點各選項人數，鍵為 很像我、有點像我、不太像我、很不像我、我不確定、未作答。
+- 清點方法同任務 1：逐份學習單確認該生在「這一項」圈選哪一張臉，全部看完再加總。
+- 自我檢查：每一項的各選項人數相加必須正好等於 studentCount。若對不上，請重新清點。
+- evidence：一句話描述學生在該亮能的表現（可引用學習單原話，需去識別化）。
+- 六個亮能都要列出。
 
 情況 B — 舊版回饋單（沒有亮能自評題）：
-改為從課程內容推論，只列出「有達成」的亮能，avg、n、excluded 皆填 null，evidence 說明本課程如何展現該亮能。
+counts 的數字全部填 0，只列出「有達成」的亮能並提供 evidence。
 
 六大亮能定義：
 - 覺察力：敏銳感受自我與環境變化（自我覺知、環境意識、美感素養）
@@ -49,7 +60,7 @@ name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力
 從回饋單或文件內容判斷這堂課的參與年級／對象，例如「一～六年級」「三、四年級」「五年級」。填入 audience（字串）。若無法判斷，填空字串 ""。
 
 只回覆以下 JSON，不要加任何其他文字：
-{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","avg":3.4,"n":18,"excluded":2,"evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
+{"studentCount": 7, "like": {"超級喜歡":3,"喜歡":3,"還好":1,"不太喜歡":0,"未作答":0}, "understand": {"全部聽懂":2,"大部分聽懂":4,"聽懂一點點":1,"幾乎沒聽懂":0,"未作答":0}, "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","counts":{"很像我":4,"有點像我":2,"不太像我":0,"很不像我":0,"我不確定":1,"未作答":0},"evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -59,6 +70,37 @@ const CORS = {
 };
 
 const VALID_COMPETENCIES = ['覺察力', '表達力', '驅動力', '合作力', '探索力', '實踐力'];
+
+// 選項對應分數。由程式換算，避免模型心算出錯
+const LIKE_MAP = { '超級喜歡': 4, '喜歡': 3, '還好': 2, '不太喜歡': 1 };
+const UNDERSTAND_MAP = { '全部聽懂': 4, '大部分聽懂': 3, '聽懂一點點': 2, '幾乎沒聽懂': 1 };
+const COMP_MAP = { '很像我': 4, '有點像我': 3, '不太像我': 2, '很不像我': 1 };
+
+const toCount = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+};
+
+// 依「各選項人數」精確計算平均；n 為有效樣本數（不含我不確定／未作答）
+function statsFromCounts(counts, map) {
+  if (!counts || typeof counts !== 'object') return { score: null, n: 0, answered: 0 };
+  let sum = 0, n = 0;
+  for (const [option, value] of Object.entries(map)) {
+    const c = toCount(counts[option]);
+    sum += value * c;
+    n += c;
+  }
+  return { score: n ? Math.round((sum / n) * 10) / 10 : null, n, answered: n };
+}
+
+// 清點總人數（含未作答與我不確定），用來和 studentCount 對帳
+function totalCounted(counts, map, extraKeys) {
+  if (!counts || typeof counts !== 'object') return 0;
+  let t = 0;
+  Object.keys(map).forEach((k) => { t += toCount(counts[k]); });
+  (extraKeys || []).forEach((k) => { t += toCount(counts[k]); });
+  return t;
+}
 
 // 學習單上可能只印「覺察」不印「覺察力」，統一正規化成完整名稱
 function normalizeCompetencyName(raw) {
@@ -93,24 +135,46 @@ function normalizeResult(parsed) {
     return { text, page, file };
   }).filter((x) => x && x.text) : []);
 
+  const studentCount = toCount(parsed.studentCount) || null;
+
   const competencies = Array.isArray(parsed.competencies)
     ? parsed.competencies
         .map((c) => (c ? { ...c, name: normalizeCompetencyName(c.name) } : null))
         .filter((c) => c && c.name)
-        .map((c) => ({
-          name: c.name,
-          evidence: typeof c.evidence === 'string' ? c.evidence.trim() : '',
-          avg: typeof c.avg === 'number' && isFinite(c.avg) ? Math.round(c.avg * 10) / 10 : null,
-          n: Number.isInteger(c.n) && c.n >= 0 ? c.n : null,
-          excluded: Number.isInteger(c.excluded) && c.excluded >= 0 ? c.excluded : null,
-        }))
+        .map((c) => {
+          const counts = c.counts && typeof c.counts === 'object' ? c.counts : null;
+          const { score, n } = statsFromCounts(counts, COMP_MAP);
+          const excluded = toCount(counts && counts['我不確定']);
+          const counted = totalCounted(counts, COMP_MAP, ['我不確定', '未作答']);
+          return {
+            name: c.name,
+            evidence: typeof c.evidence === 'string' ? c.evidence.trim() : '',
+            // 優先採用「由計數換算」的結果；舊格式才退回模型自報的 avg
+            avg: score != null ? score : (typeof c.avg === 'number' && isFinite(c.avg) ? Math.round(c.avg * 10) / 10 : null),
+            n: score != null ? n : (Number.isInteger(c.n) ? c.n : null),
+            excluded: counts ? excluded : (Number.isInteger(c.excluded) ? c.excluded : null),
+            counts: counts || null,
+            // 人數對不上代表清點可能有誤，交由前端提示人工核對
+            mismatch: !!(counts && studentCount && counted !== studentCount),
+          };
+        })
     : [];
 
+  const likeStats = statsFromCounts(parsed.like, LIKE_MAP);
+  const understandStats = statsFromCounts(parsed.understand, UNDERSTAND_MAP);
+  const likeCounted = totalCounted(parsed.like, LIKE_MAP, ['未作答']);
+  const understandCounted = totalCounted(parsed.understand, UNDERSTAND_MAP, ['未作答']);
+
   return {
-    likeScore: num(parsed.likeScore),
-    likeScale: num(parsed.likeScale) || 5,
-    understandScore: num(parsed.understandScore),
-    understandScale: num(parsed.understandScale) || 5,
+    studentCount,
+    likeScore: likeStats.score != null ? likeStats.score : num(parsed.likeScore),
+    likeScale: likeStats.score != null ? 4 : (num(parsed.likeScale) || 5),
+    likeCounts: parsed.like && typeof parsed.like === 'object' ? parsed.like : null,
+    likeMismatch: !!(studentCount && likeCounted && likeCounted !== studentCount),
+    understandScore: understandStats.score != null ? understandStats.score : num(parsed.understandScore),
+    understandScale: understandStats.score != null ? 4 : (num(parsed.understandScale) || 5),
+    understandCounts: parsed.understand && typeof parsed.understand === 'object' ? parsed.understand : null,
+    understandMismatch: !!(studentCount && understandCounted && understandCounted !== studentCount),
     audience: typeof parsed.audience === 'string' ? parsed.audience.trim() : '',
     foundation: cleanItems(parsed.foundation),
     school: cleanItems(parsed.school),
