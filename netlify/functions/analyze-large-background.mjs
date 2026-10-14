@@ -155,8 +155,21 @@ export default async (req) => {
     if (!driveUrls.length && body.driveUrl) driveUrls = [body.driveUrl];
     driveUrls = driveUrls.map((u) => (u || '').trim()).filter(Boolean).slice(0, 10);
 
-    // 直接上傳的檔案（已在瀏覽器端壓縮）
-    const uploadFiles = Array.isArray(body.files) ? body.files.slice(0, 10) : [];
+    // 上傳的檔案：因背景 function 請求上限僅 256KB，檔案由 stage-upload 先存入 Blobs，這裡再取出
+    let uploadFiles = Array.isArray(body.files) ? body.files.slice(0, 10) : [];
+    if (!uploadFiles.length && body.staged) {
+      try {
+        const staging = getStore('upload-staging');
+        const staged = await staging.get(jobId, { type: 'json' });
+        if (staged && Array.isArray(staged.files)) uploadFiles = staged.files.slice(0, 10);
+      } catch (e) {
+        console.error('讀取暫存檔案失敗:', e.message);
+      }
+      if (!uploadFiles.length) {
+        await store.setJSON(jobId, { status: 'error', error: '找不到暫存的檔案，請重新上傳' });
+        return new Response('ok');
+      }
+    }
 
     if (!apiKey) {
       await store.setJSON(jobId, { status: 'error', error: '未設定 API Key' });
@@ -273,6 +286,11 @@ export default async (req) => {
     const parsed = JSON.parse(match[0]);
     const result = normalizeResult(parsed);
     await store.setJSON(jobId, { status: 'done', ...result });
+
+    // 分析完成，清掉暫存的檔案內容
+    if (body.staged) {
+      try { await getStore('upload-staging').delete(jobId); } catch (_) {}
+    }
 
   } catch (err) {
     console.error('Background handler error:', err);

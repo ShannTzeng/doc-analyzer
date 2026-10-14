@@ -9,6 +9,10 @@
 [functions."analyze"]
   timeout = 26
 
+# 接收並暫存上傳檔案（最多約 4MB），需要比預設 10 秒更長
+[functions."stage-upload"]
+  timeout = 26
+
 [[headers]]
   for = "/*"
   [headers.values]

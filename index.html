@@ -1183,19 +1183,35 @@
             });
           }
 
-          // 走背景 function：多份檔案的分析時間會超過同步 function 的 26 秒上限
+          // 兩段式：先用同步 function 把檔案暫存（背景 function 的請求上限僅 256KB），
+          // 再用極小的請求通知背景 function 分析（避開同步 function 的 26 秒上限）
           const jobId = genId();
-          const resp = await fetch('/.netlify/functions/analyze-large-background', {
+
+          loadingMsg.textContent = '正在上傳檔案⋯';
+          const stage = await fetch('/.netlify/functions/stage-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jobId, files }),
           });
-          if (resp.status === 413) {
+          if (stage.status === 413) {
             throw new Error('上傳內容過大，請減少份數後再試');
           }
-          if (!resp.ok && resp.status !== 202) {
-            throw new Error(`上傳失敗（HTTP ${resp.status}），請減少份數或稍後再試`);
+          const ctStage = stage.headers.get('content-type') || '';
+          if (!stage.ok || !ctStage.includes('application/json')) {
+            throw new Error(`上傳失敗（HTTP ${stage.status}），請減少份數或稍後再試`);
           }
+          const stageData = await stage.json();
+          if (stageData.error) throw new Error(stageData.error);
+
+          loadingMsg.textContent = selectedFiles.length > 1
+            ? `正在合併分析 ${selectedFiles.length} 份檔案，請稍候⋯`
+            : 'Claude 正在分析中，請稍候⋯';
+
+          await fetch('/.netlify/functions/analyze-large-background', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jobId, staged: true }),
+          });
 
           await new Promise(r => setTimeout(r, 3000));
           result = await pollJobResult(jobId, 420);
