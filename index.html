@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>文件內容分析系統</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -178,6 +179,29 @@
       color: #aaa; padding: 4px; border-radius: 6px; display: flex; align-items: center;
     }
     .btn-remove:hover { color: #e53e3e; background: #fee2e2; }
+
+    /* 多檔上傳清單 */
+    #uploadList { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+    .up-item {
+      display: flex; align-items: center; gap: 12px;
+      background: #f8f8f5; border: 1px solid #e8e8e0;
+      border-radius: 10px; padding: 10px 13px;
+    }
+    .up-info { flex: 1; min-width: 0; }
+    .up-name {
+      font-size: 0.86rem; font-weight: 600; color: #1a1a1a;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .up-size { font-size: 0.75rem; color: #888; margin-top: 2px; }
+    .up-size .shrunk { color: #3a7a28; font-weight: 600; }
+    .up-size .working { color: #c17d2a; }
+    .upload-total {
+      display: none; margin-top: 12px; padding: 10px 14px;
+      border-radius: 10px; font-size: 0.82rem;
+      background: #f0f7ee; border: 1px solid #c3debb; color: #3a6b2a;
+    }
+    .upload-total.visible { display: block; }
+    .upload-total.over { background: #fef6ec; border-color: #f0c38e; color: #9a5b16; }
 
     .img-preview-wrap {
       display: none; margin-top: 12px;
@@ -463,14 +487,14 @@
       <!-- Tab: Upload -->
       <div class="tab-panel active" id="tab-upload">
         <div class="drop-zone" id="dropZone">
-          <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+          <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
           <div class="drop-icon">
             <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#6ab04c" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
             </svg>
           </div>
           <h2>拖曳檔案至此，或點擊選擇</h2>
-          <p>每次分析一份檔案，上限 4MB</p>
+          <p>可一次選取多份（最多 10 份），檔案過大會<strong>自動壓縮</strong></p>
           <div class="file-types">
             <span class="badge">PDF</span>
             <span class="badge">Word (.docx)</span>
@@ -479,22 +503,8 @@
           </div>
         </div>
 
-        <div class="file-preview" id="filePreview">
-          <div class="file-icon" id="fileIcon"></div>
-          <div class="file-info">
-            <div class="name" id="fileName"></div>
-            <div class="size" id="fileSize"></div>
-          </div>
-          <button class="btn-remove" id="btnRemove">
-            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-
-        <div class="img-preview-wrap" id="imgPreviewWrap">
-          <img id="imgPreview" src="" alt="預覽" />
-        </div>
+        <div id="uploadList"></div>
+        <div class="upload-total" id="uploadTotal"></div>
       </div>
 
       <!-- Tab: Google Drive -->
@@ -704,12 +714,17 @@
 
     // 單次可分析的雲端連結上限（要調整只改這一行）
     const MAX_DRIVE_LINKS = 10;
+    // 上傳分頁：份數上限，以及壓縮後的總量目標（Netlify 單次請求約 6MB，base64 會膨脹約 1.33 倍）
+    const MAX_UPLOAD_FILES = 10;
+    const UPLOAD_TOTAL_TARGET_MB = 3.5;
+    // 單頁渲染逾時：少數 PDF（如大量向量繪圖的設計稿）會極慢，逾時就放棄壓縮改用原檔
+    const PAGE_RENDER_TIMEOUT_MS = 30000;
     // 檔案合計大小上限（MB）。Claude 單次約 32MB，檔案轉 base64 會膨脹約 1.33 倍，故留安全空間
     const MAX_TOTAL_MB = 20;
     const sizeCache = {};   // { driveId: {size, accessible, error} }
 
     // State
-    let selectedFile = null;
+    let selectedFiles = [];   // [{file, ext, name, originalSize, finalSize, blob, compressed, status}]
     let activeTab = 'upload';
     let capturedImageBase64 = null;
     let reportImages = [];
@@ -720,13 +735,8 @@
     // Elements
     const dropZone    = document.getElementById('dropZone');
     const fileInput   = document.getElementById('fileInput');
-    const filePreview = document.getElementById('filePreview');
-    const fileIcon    = document.getElementById('fileIcon');
-    const fileNameEl  = document.getElementById('fileName');
-    const fileSizeEl  = document.getElementById('fileSize');
-    const btnRemove   = document.getElementById('btnRemove');
-    const imgWrap     = document.getElementById('imgPreviewWrap');
-    const imgEl       = document.getElementById('imgPreview');
+    const uploadList  = document.getElementById('uploadList');
+    const uploadTotal = document.getElementById('uploadTotal');
     const driveList   = document.getElementById('driveList');
     const addDriveBtn = document.getElementById('addDriveBtn');
     const drivePreview = document.getElementById('drivePreview');
@@ -768,64 +778,227 @@
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
     dropZone.addEventListener('drop', e => {
       e.preventDefault(); dropZone.classList.remove('drag-over');
-      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
     });
-    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFiles(fileInput.files);
+      fileInput.value = ''; // 允許重複選同一個檔案
+    });
 
-    function handleFile(file) {
-      const ext = file.name.split('.').pop().toLowerCase();
-      const allowedExt = ['pdf','doc','docx','jpg','jpeg','png'];
-      if (!allowedExt.includes(ext)) {
-        showError('不支援的檔案類型，請上傳 PDF、Word 或圖片 (JPG/PNG)'); return;
-      }
-      if (file.size > 4 * 1024 * 1024) {
-        showError(`檔案太大（${formatSize(file.size)}），請上傳 4MB 以內的檔案，或改用「Google 雲端連結」分頁`); return;
-      }
-      selectedFile = file;
-      capturedImageBase64 = null;
-      reportImages = [];
+    const ALLOWED_EXT = ['pdf','doc','docx','jpg','jpeg','png'];
+
+    async function handleFiles(fileList) {
       hideError(); hideResults();
+      const incoming = Array.from(fileList);
 
-      if (['pdf'].includes(ext)) { fileIcon.textContent = '📄'; fileIcon.className = 'file-icon pdf'; }
-      else if (['doc','docx'].includes(ext)) { fileIcon.textContent = '📝'; fileIcon.className = 'file-icon word'; }
-      else { fileIcon.textContent = '🖼️'; fileIcon.className = 'file-icon img'; }
+      for (const file of incoming) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!ALLOWED_EXT.includes(ext)) {
+          showError(`「${file.name}」格式不支援，僅接受 PDF、Word、JPG、PNG`);
+          continue;
+        }
+        if (selectedFiles.length >= MAX_UPLOAD_FILES) {
+          showError(`最多只能上傳 ${MAX_UPLOAD_FILES} 份檔案`);
+          break;
+        }
+        selectedFiles.push({
+          file, ext,
+          name: file.name,
+          originalSize: file.size,
+          finalSize: file.size,
+          blob: file,
+          status: 'pending',
+        });
+      }
 
-      fileNameEl.textContent = file.name;
-      fileSizeEl.textContent = formatSize(file.size);
-      filePreview.classList.add('visible');
+      renderUploadList();
       updateBtn();
+      await compressIfNeeded();
+    }
 
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = e => {
-          imgEl.src = e.target.result;
-          imgWrap.classList.add('visible');
-          capturedImageBase64 = e.target.result;
-        };
-        reader.readAsDataURL(file);
-      } else if (file.type === 'application/pdf' || ext === 'pdf') {
-        const reader = new FileReader();
-        reader.onload = async e => {
-          const base64 = e.target.result.split(',')[1];
-          const dataUrl = await renderPdfFirstPage(base64);
-          if (dataUrl) {
-            imgEl.src = dataUrl;
-            imgWrap.classList.add('visible');
-            capturedImageBase64 = dataUrl;
+    // 依總量決定是否壓縮；每份檔案的目標大小 = 總預算 / 份數
+    async function compressIfNeeded() {
+      const budget = UPLOAD_TOTAL_TARGET_MB * 1024 * 1024;
+      const perFile = budget / Math.max(selectedFiles.length, 1);
+
+      for (const item of selectedFiles) {
+        if (item.status === 'done') continue;
+        // 已經夠小、或是 Word（無法用此方式壓縮）就跳過
+        if (item.originalSize <= perFile || ['doc','docx'].includes(item.ext)) {
+          item.status = 'done';
+          continue;
+        }
+        item.status = 'working';
+        renderUploadList(); updateBtn();
+        try {
+          const compressed = await compressFile(item, perFile);
+          if (compressed && compressed.size < item.originalSize) {
+            item.blob = compressed;
+            item.finalSize = compressed.size;
+            item.compressed = true;
+          } else {
+            item.uncompressible = true;
           }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        imgWrap.classList.remove('visible');
+        } catch (e) {
+          console.warn('壓縮失敗，改用原檔：', item.name, e);
+          item.uncompressible = true;
+        }
+        item.status = 'done';
+        renderUploadList(); updateBtn();
+      }
+      renderUploadList();
+      updateBtn();
+    }
+
+    // 壓縮單一檔案：PDF 逐頁重繪成較低解析度 JPEG 後重組；圖片則縮圖重新編碼
+    async function compressFile(item, targetBytes) {
+      const attempts = [
+        { dpi: 150, quality: 0.75 },
+        { dpi: 120, quality: 0.65 },
+        { dpi: 100, quality: 0.6 },
+      ];
+      let best = null;
+      for (const opt of attempts) {
+        let out;
+        try {
+          out = item.ext === 'pdf'
+            ? await compressPdf(item.file, opt)
+            : await compressImage(item.file, opt);
+        } catch (e) {
+          // 渲染逾時代表這份 PDF 本身極難處理，再降解析度也一樣，直接放棄
+          if (e && e.message === 'RENDER_TIMEOUT') return null;
+          throw e;
+        }
+        if (!out) continue;
+        if (!best || out.size < best.size) best = out;
+        if (out.size <= targetBytes) return out;   // 已達標就不再壓更小，保留畫質
+      }
+      return best;
+    }
+
+    // 帶逾時的頁面渲染：逾時就取消，避免整個頁面卡死
+    // 注意：取消後 task.promise 會以 RenderingCancelledException 拒絕，
+    // 因此只 await task.promise（不用 Promise.race），避免產生未處理的例外
+    async function renderWithTimeout(page, viewport, ctx) {
+      const task = page.render({ canvasContext: ctx, viewport });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try { task.cancel(); } catch (_) {}
+      }, PAGE_RENDER_TIMEOUT_MS);
+      try {
+        await task.promise;
+      } catch (e) {
+        throw timedOut ? new Error('RENDER_TIMEOUT') : e;
+      } finally {
+        clearTimeout(timer);
       }
     }
 
-    btnRemove.addEventListener('click', () => {
-      selectedFile = null; capturedImageBase64 = null; reportImages = [];
-      fileInput.value = '';
-      filePreview.classList.remove('visible');
-      imgWrap.classList.remove('visible');
-      updateBtn(); hideError();
+    async function compressPdf(file, { dpi, quality }) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+      const { jsPDF } = window.jspdf;
+      let doc = null;
+      const scale = dpi / 72;   // PDF 內部單位為 72 DPI
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const base = page.getViewport({ scale: 1 });        // 頁面實際尺寸（pt）
+        const viewport = page.getViewport({ scale });        // 繪製解析度
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await renderWithTimeout(page, viewport, ctx);
+        const img = canvas.toDataURL('image/jpeg', quality);
+
+        const orientation = base.width > base.height ? 'landscape' : 'portrait';
+        if (!doc) doc = new jsPDF({ unit: 'pt', format: [base.width, base.height], orientation });
+        else doc.addPage([base.width, base.height], orientation);
+        doc.addImage(img, 'JPEG', 0, 0, base.width, base.height);
+      }
+      return doc ? doc.output('blob') : null;
+    }
+
+    async function compressImage(file, { dpi, quality }) {
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      const img = await new Promise((res, rej) => {
+        const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl;
+      });
+      // 以 dpi 換算最長邊上限（A4 長邊約 11.7 吋）
+      const maxEdge = Math.round(dpi * 11.7);
+      const ratio = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    }
+
+    function uploadTotalBytes() {
+      return selectedFiles.reduce((s, it) => s + it.finalSize, 0);
+    }
+
+    function renderUploadList() {
+      uploadList.innerHTML = '';
+      selectedFiles.forEach((it, idx) => {
+        const icon = it.ext === 'pdf' ? '📄' : ['doc','docx'].includes(it.ext) ? '📝' : '🖼️';
+        const cls = it.ext === 'pdf' ? 'pdf' : ['doc','docx'].includes(it.ext) ? 'word' : 'img';
+        let sizeHtml;
+        if (it.status === 'working') {
+          sizeHtml = `<span class="working">壓縮中⋯</span>`;
+        } else if (it.compressed) {
+          sizeHtml = `${formatSize(it.originalSize)} → <span class="shrunk">${formatSize(it.finalSize)}</span>`;
+        } else if (it.uncompressible) {
+          sizeHtml = `${formatSize(it.finalSize)}<span class="working">（此檔無法再壓縮）</span>`;
+        } else {
+          sizeHtml = formatSize(it.finalSize);
+        }
+        const row = document.createElement('div');
+        row.className = 'up-item';
+        row.innerHTML =
+          `<div class="file-icon ${cls}">${icon}</div>` +
+          `<div class="up-info"><div class="up-name">${escapeHtml(it.name)}</div><div class="up-size">${sizeHtml}</div></div>` +
+          `<button class="btn-remove" data-idx="${idx}" title="移除"><svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
+        uploadList.appendChild(row);
+      });
+
+      const total = uploadTotalBytes();
+      const busy = selectedFiles.some(f => f.status !== 'done');
+      const over = total > UPLOAD_TOTAL_TARGET_MB * 1024 * 1024;
+      if (selectedFiles.length) {
+        uploadTotal.classList.add('visible');
+        // 壓縮尚未完成時先不下「超標」結論，避免誤導
+        uploadTotal.classList.toggle('over', over && !busy);
+        if (busy) {
+          uploadTotal.textContent = `共 ${selectedFiles.length} 份・正在壓縮，請稍候⋯`;
+        } else {
+          uploadTotal.textContent = over
+            ? `共 ${selectedFiles.length} 份・合計 ${formatSize(total)}・⚠️ 已超過 ${UPLOAD_TOTAL_TARGET_MB}MB，請減少份數或改用「Google 雲端連結」分頁`
+            : `共 ${selectedFiles.length} 份・合計 ${formatSize(total)}`;
+        }
+      } else {
+        uploadTotal.classList.remove('visible', 'over');
+      }
+    }
+
+    uploadList.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-remove');
+      if (!btn) return;
+      selectedFiles.splice(Number(btn.dataset.idx), 1);
+      reportImages = [];
+      renderUploadList();
+      updateBtn();
+      hideError();
     });
 
     // 多連結：收集所有有效的 Google Drive 連結
@@ -947,15 +1120,17 @@
     });
 
     function updateBtn() {
-      if (activeTab === 'upload') btnAnalyze.disabled = !selectedFile;
+      if (activeTab === 'upload') {
+        const busy = selectedFiles.some(f => f.status !== 'done');
+        btnAnalyze.disabled = selectedFiles.length === 0 || busy;
+      }
       else btnAnalyze.disabled = getDriveUrls().length === 0;
     }
 
     btnAgain.addEventListener('click', () => {
-      selectedFile = null; capturedImageBase64 = null; reportImages = [];
+      selectedFiles = []; capturedImageBase64 = null; reportImages = [];
       fileInput.value = '';
-      filePreview.classList.remove('visible');
-      imgWrap.classList.remove('visible');
+      renderUploadList();
       driveList.innerHTML = '';
       driveList.appendChild(makeDriveRow());
       refreshDriveControls();
@@ -978,13 +1153,27 @@
         let result;
 
         if (activeTab === 'upload') {
-          // 直接上傳模式
-          const base64 = await toBase64(selectedFile);
-          const payload = {
-            fileData: base64,
-            mimeType: selectedFile.type || getMimeFromExt(selectedFile.name),
-            fileName: selectedFile.name,
-          };
+          // 直接上傳模式（可多檔，壓縮後合併分析）
+          const total = uploadTotalBytes();
+          if (total > UPLOAD_TOTAL_TARGET_MB * 1024 * 1024) {
+            throw new Error(
+              `檔案合計 ${formatSize(total)}，壓縮後仍超過 ${UPLOAD_TOTAL_TARGET_MB}MB 上限。` +
+              `請減少份數，或改用「Google 雲端連結」分頁（可處理更大的檔案）。`
+            );
+          }
+          loadingMsg.textContent = selectedFiles.length > 1
+            ? `正在上傳並合併分析 ${selectedFiles.length} 份檔案⋯`
+            : 'Claude 正在分析中，請稍候⋯';
+
+          const files = [];
+          for (const it of selectedFiles) {
+            files.push({
+              fileData: await toBase64(it.blob),
+              mimeType: it.blob.type || getMimeFromExt(it.name),
+              fileName: it.name,
+            });
+          }
+          const payload = { files };
           const resp = await fetch('/.netlify/functions/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1057,19 +1246,27 @@
       const pagesFor = (fileIdx) => illustrations.filter(i => (i.file || 1) === fileIdx).map(i => i.page);
       const allPages = illustrations.map(i => i.page);
 
-      // 上傳模式：單張圖片
-      if (activeTab === 'upload' && selectedFile && selectedFile.type.startsWith('image/')) {
-        if (capturedImageBase64) reportImages = [capturedImageBase64];
-        return;
-      }
+      // 上傳模式：可能多份，依 file 索引對應到正確的檔案
+      if (activeTab === 'upload' && selectedFiles.length) {
+        let fileIdxs = Array.from(new Set(illustrations.map(i => i.file || 1)));
+        if (!fileIdxs.length) fileIdxs = [1];
 
-      // 上傳模式：單份 PDF（只有 1 份檔案，忽略 file 索引）
-      if (activeTab === 'upload' && selectedFile) {
-        const ext = selectedFile.name.split('.').pop().toLowerCase();
-        if (selectedFile.type === 'application/pdf' || ext === 'pdf') {
-          const bytes = new Uint8Array(await selectedFile.arrayBuffer());
-          reportImages = await renderPdfPages(bytes, allPages);
+        for (const fileIdx of fileIdxs) {
+          const item = selectedFiles[fileIdx - 1];
+          if (!item) continue;
+          try {
+            if (item.ext === 'pdf') {
+              const bytes = new Uint8Array(await item.blob.arrayBuffer());
+              const imgs = await renderPdfPages(bytes, pagesFor(fileIdx));
+              reportImages.push(...imgs);
+            } else if (item.blob.type.startsWith('image/')) {
+              reportImages.push(await blobToDataURL(item.blob));
+            }
+          } catch (e) {
+            console.warn(`上傳檔 #${fileIdx} 渲染失敗：`, e);
+          }
         }
+        reportImages = reportImages.slice(0, 3);
         return;
       }
 

@@ -179,21 +179,16 @@ async function downloadFromDrive(url) {
   return { base64, mimeType };
 }
 
-async function buildMessageContent(fileData, mimeType, fileName) {
+// 產生單一檔案的內容區塊（不含最後的指令文字）
+async function buildFileBlocks(fileData, mimeType, fileName) {
   if (mimeType.startsWith('image/')) {
     const supported = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     const effectiveMime = supported.includes(mimeType) ? mimeType : 'image/jpeg';
-    return [
-      { type: 'image', source: { type: 'base64', media_type: effectiveMime, data: fileData } },
-      { type: 'text', text: ANALYSIS_PROMPT },
-    ];
+    return [{ type: 'image', source: { type: 'base64', media_type: effectiveMime, data: fileData } }];
   }
 
   if (mimeType === 'application/pdf') {
-    return [
-      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } },
-      { type: 'text', text: ANALYSIS_PROMPT },
-    ];
+    return [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } }];
   }
 
   if (
@@ -206,10 +201,24 @@ async function buildMessageContent(fileData, mimeType, fileName) {
     const result = await mammoth.extractRawText({ buffer });
     const text = result.value.trim();
     if (!text) throw new Error('Word 文件內容為空或無法讀取');
-    return [{ type: 'text', text: `以下是 Word 文件內容：\n\n${text}\n\n---\n\n${ANALYSIS_PROMPT}` }];
+    return [{ type: 'text', text: `以下是 Word 文件內容：\n\n${text}` }];
   }
 
   throw new Error(`不支援的檔案類型：${mimeType}`);
+}
+
+// 多份檔案合併成同一則訊息；標記【第N份檔案】讓 Claude 能正確標出來源
+async function buildMessageContent(files) {
+  const content = [];
+  const multi = files.length > 1;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (multi) content.push({ type: 'text', text: `【第${i + 1}份檔案】` });
+    const blocks = await buildFileBlocks(f.fileData, f.mimeType, f.fileName);
+    content.push(...blocks);
+  }
+  content.push({ type: 'text', text: ANALYSIS_PROMPT });
+  return content;
 }
 
 exports.handler = async (event) => {
@@ -221,20 +230,27 @@ exports.handler = async (event) => {
     if (!apiKey) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: '未設定 API Key' }) };
 
     const body = JSON.parse(event.body);
-    let fileData, mimeType, fileName;
+    let files = [];
 
-    if (body.driveUrl) {
-      // Google Drive link mode
-      ({ base64: fileData, mimeType } = await downloadFromDrive(body.driveUrl));
-      fileName = body.fileName || 'document';
+    if (Array.isArray(body.files) && body.files.length) {
+      // 多檔上傳模式
+      files = body.files.slice(0, 10).map((f) => ({
+        fileData: f.fileData,
+        mimeType: f.mimeType || 'application/pdf',
+        fileName: f.fileName || 'document',
+      }));
+    } else if (body.driveUrl) {
+      // Google Drive 單一連結（向後相容）
+      const { base64, mimeType } = await downloadFromDrive(body.driveUrl);
+      files = [{ fileData: base64, mimeType, fileName: body.fileName || 'document' }];
     } else if (body.fileData) {
-      // Direct upload mode
-      ({ fileData, mimeType, fileName } = body);
+      // 單檔上傳（向後相容）
+      files = [{ fileData: body.fileData, mimeType: body.mimeType, fileName: body.fileName || 'document' }];
     } else {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: '請上傳檔案或貼上 Google Drive 連結' }) };
     }
 
-    const messageContent = await buildMessageContent(fileData, mimeType, fileName);
+    const messageContent = await buildMessageContent(files);
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
