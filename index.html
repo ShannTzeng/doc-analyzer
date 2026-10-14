@@ -500,7 +500,7 @@
           1. 在 Google 雲端硬碟對檔案按右鍵 → 共用 → 取得連結<br>
           2. 將存取權限設為「<strong>知道連結的人都可以檢視</strong>」<br>
           3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）<br>
-          4. 可一次分析<strong>多份檔案（最多 6 份）</strong>，系統會合併為「同一課程」分析，適合混年級回饋單
+          4. 可一次分析<strong>多份檔案（最多 10 份）</strong>，系統會合併為「同一課程」分析，適合混年級回饋單
         </div>
         <div id="driveList">
           <div class="drive-row">
@@ -513,7 +513,7 @@
             </button>
           </div>
         </div>
-        <button type="button" class="add-link-btn" id="addDriveBtn">＋ 新增連結（最多 6 份）</button>
+        <button type="button" class="add-link-btn" id="addDriveBtn">＋ 新增連結（最多 10 份）</button>
         <div class="drive-preview" id="drivePreview">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#3a7a28" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -698,6 +698,9 @@
       });
     }
 
+    // 單次可分析的雲端連結上限（要調整只改這一行）
+    const MAX_DRIVE_LINKS = 10;
+
     // State
     let selectedFile = null;
     let activeTab = 'upload';
@@ -835,8 +838,10 @@
       rows.forEach(r => {
         r.querySelector('.drive-remove').style.display = rows.length > 1 ? 'flex' : 'none';
       });
-      addDriveBtn.disabled = rows.length >= 6;
-      addDriveBtn.textContent = rows.length >= 6 ? '已達上限（6 份）' : '＋ 新增連結（最多 6 份）';
+      addDriveBtn.disabled = rows.length >= MAX_DRIVE_LINKS;
+      addDriveBtn.textContent = rows.length >= MAX_DRIVE_LINKS
+        ? `已達上限（${MAX_DRIVE_LINKS} 份）`
+        : `＋ 新增連結（最多 ${MAX_DRIVE_LINKS} 份）`;
     }
 
     function makeDriveRow() {
@@ -849,7 +854,7 @@
     }
 
     addDriveBtn.addEventListener('click', () => {
-      if (driveRowCount() >= 6) return;
+      if (driveRowCount() >= MAX_DRIVE_LINKS) return;
       driveList.appendChild(makeDriveRow());
       refreshDriveControls();
     });
@@ -941,7 +946,7 @@
 
           // 等待 5 秒後開始輪詢（多檔需更長時間）
           await new Promise(r => setTimeout(r, 5000));
-          result = await pollJobResult(jobId, 270);
+          result = await pollJobResult(jobId, 420);
         }
 
         analysis = result;

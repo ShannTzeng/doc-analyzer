@@ -153,7 +153,7 @@ export default async (req) => {
     // 支援多份連結（driveUrls），並向後相容單一 driveUrl
     let driveUrls = Array.isArray(body.driveUrls) ? body.driveUrls : [];
     if (!driveUrls.length && body.driveUrl) driveUrls = [body.driveUrl];
-    driveUrls = driveUrls.map((u) => (u || '').trim()).filter(Boolean).slice(0, 6);
+    driveUrls = driveUrls.map((u) => (u || '').trim()).filter(Boolean).slice(0, 10);
 
     if (!apiKey) {
       await store.setJSON(jobId, { status: 'error', error: '未設定 API Key' });
