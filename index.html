@@ -1182,15 +1182,23 @@
               fileName: it.name,
             });
           }
-          const payload = { files };
-          const resp = await fetch('/.netlify/functions/analyze', {
+
+          // 走背景 function：多份檔案的分析時間會超過同步 function 的 26 秒上限
+          const jobId = genId();
+          const resp = await fetch('/.netlify/functions/analyze-large-background', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ jobId, files }),
           });
-          const data = await resp.json();
-          if (!resp.ok || data.error) throw new Error(data.error || '伺服器錯誤，請稍後再試');
-          result = data;
+          if (resp.status === 413) {
+            throw new Error('上傳內容過大，請減少份數後再試');
+          }
+          if (!resp.ok && resp.status !== 202) {
+            throw new Error(`上傳失敗（HTTP ${resp.status}），請減少份數或稍後再試`);
+          }
+
+          await new Promise(r => setTimeout(r, 3000));
+          result = await pollJobResult(jobId, 420);
 
         } else {
           // Google Drive 模式：背景 function + 輪詢（支援多份）
@@ -1331,6 +1339,9 @@
         try {
           const resp = await fetch(`/.netlify/functions/job-status?id=${jobId}`);
           if (!resp.ok) continue;
+          // 伺服器偶爾會回傳 HTML 錯誤頁，直接略過這一輪，不要讓 JSON 解析失敗中斷輪詢
+          const ct = resp.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) continue;
           const data = await resp.json();
           if (data.status === 'done') return data;
           if (data.status === 'error') throw new Error(data.error || '分析失敗，請重試');

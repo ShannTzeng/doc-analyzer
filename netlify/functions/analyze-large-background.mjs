@@ -155,19 +155,56 @@ export default async (req) => {
     if (!driveUrls.length && body.driveUrl) driveUrls = [body.driveUrl];
     driveUrls = driveUrls.map((u) => (u || '').trim()).filter(Boolean).slice(0, 10);
 
+    // 直接上傳的檔案（已在瀏覽器端壓縮）
+    const uploadFiles = Array.isArray(body.files) ? body.files.slice(0, 10) : [];
+
     if (!apiKey) {
       await store.setJSON(jobId, { status: 'error', error: '未設定 API Key' });
       return new Response('ok');
     }
-    if (!driveUrls.length) {
-      await store.setJSON(jobId, { status: 'error', error: '未提供任何 Google Drive 連結' });
+    if (!driveUrls.length && !uploadFiles.length) {
+      await store.setJSON(jobId, { status: 'error', error: '未提供任何檔案或 Google Drive 連結' });
       return new Response('ok');
     }
 
     await store.setJSON(jobId, { status: 'processing' });
 
-    // 逐一下載每份檔案，組成同一則 Claude 訊息（合併分析）
     const messageContent = [];
+
+    // 上傳模式：檔案內容已隨請求送達，直接組成訊息
+    if (uploadFiles.length) {
+      const multi = uploadFiles.length > 1;
+      for (let i = 0; i < uploadFiles.length; i++) {
+        const f = uploadFiles[i] || {};
+        const mime = f.mimeType || 'application/pdf';
+        const name = f.fileName || 'document';
+        if (multi) messageContent.push({ type: 'text', text: `【第${i + 1}份檔案】` });
+
+        if (mime.startsWith('image/')) {
+          const supported = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+          const m = supported.includes(mime) ? mime : 'image/jpeg';
+          messageContent.push({ type: 'image', source: { type: 'base64', media_type: m, data: f.fileData } });
+        } else if (
+          mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+          mime === 'application/msword' ||
+          name.toLowerCase().endsWith('.docx')
+        ) {
+          const mammoth = (await import('mammoth')).default;
+          const result = await mammoth.extractRawText({ buffer: Buffer.from(f.fileData, 'base64') });
+          const text = (result.value || '').trim();
+          if (!text) {
+            await store.setJSON(jobId, { status: 'error', error: `「${name}」內容為空或無法讀取` });
+            return new Response('ok');
+          }
+          messageContent.push({ type: 'text', text: `以下是 Word 文件內容：\n\n${text}` });
+        } else {
+          messageContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.fileData } });
+        }
+      }
+      messageContent.push({ type: 'text', text: ANALYSIS_PROMPT });
+    }
+
+    // 雲端連結模式：逐一下載每份檔案，組成同一則 Claude 訊息（合併分析）
     for (let i = 0; i < driveUrls.length; i++) {
       const fileId = extractDriveId(driveUrls[i]);
       if (!fileId) {
@@ -203,7 +240,8 @@ export default async (req) => {
       }
     }
 
-    messageContent.push({ type: 'text', text: ANALYSIS_PROMPT });
+    // 上傳模式已在上方附加指令，這裡只處理雲端連結模式
+    if (driveUrls.length) messageContent.push({ type: 'text', text: ANALYSIS_PROMPT });
 
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
