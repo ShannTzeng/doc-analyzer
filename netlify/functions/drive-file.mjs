@@ -3,9 +3,18 @@ export default async (req) => {
   const url = new URL(req.url);
   const id = url.searchParams.get('id');
   const view = url.searchParams.get('view'); // view=pdf → 瀏覽器直接內嵌顯示
+  const probe = url.searchParams.get('probe') === '1'; // probe=1 → 只回報檔案大小，不下載內容
+
+  const JSON_HEADERS = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store',
+  };
 
   if (!id) {
-    return new Response('missing id', { status: 400 });
+    return probe
+      ? new Response(JSON.stringify({ size: null, accessible: false, error: 'missing id' }), { status: 400, headers: JSON_HEADERS })
+      : new Response('missing id', { status: 400 });
   }
 
   try {
@@ -13,10 +22,28 @@ export default async (req) => {
     const driveRes = await fetch(downloadUrl, { redirect: 'follow' });
 
     if (!driveRes.ok) {
+      if (probe) {
+        try { if (driveRes.body) await driveRes.body.cancel(); } catch (_) {}
+        return new Response(JSON.stringify({ size: null, accessible: false, error: `HTTP ${driveRes.status}` }), { status: 200, headers: JSON_HEADERS });
+      }
       return new Response('download failed', { status: 502 });
     }
 
     const contentType = driveRes.headers.get('content-type') || 'application/octet-stream';
+
+    // 探測模式：讀完標頭就中止下載，只回傳大小與可存取狀態
+    if (probe) {
+      const lenRaw = driveRes.headers.get('content-length');
+      const accessible = !contentType.includes('text/html');
+      try { if (driveRes.body) await driveRes.body.cancel(); } catch (_) {}
+      return new Response(JSON.stringify({
+        size: lenRaw ? Number(lenRaw) : null,
+        contentType,
+        accessible,
+        error: accessible ? null : '檔案無法存取，請確認分享設定',
+      }), { status: 200, headers: JSON_HEADERS });
+    }
+
     if (contentType.includes('text/html')) {
       return new Response('file not accessible', { status: 403 });
     }
@@ -36,6 +63,8 @@ export default async (req) => {
       },
     });
   } catch (err) {
-    return new Response(`error: ${err.message}`, { status: 500 });
+    return probe
+      ? new Response(JSON.stringify({ size: null, accessible: false, error: err.message }), { status: 200, headers: JSON_HEADERS })
+      : new Response(`error: ${err.message}`, { status: 500 });
   }
 };

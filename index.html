@@ -228,6 +228,10 @@
     }
     .drive-preview.visible { display: flex; }
     .drive-preview span { font-size: 0.82rem; color: #3a7a28; }
+    /* 超過大小上限或連結無法存取時轉為警示色 */
+    .drive-preview.over { background: #fef6ec; border-color: #f0c38e; }
+    .drive-preview.over span { color: #9a5b16; }
+    .drive-preview.over svg { stroke: #c17d2a; }
 
     /* ── Analyze button ── */
     .btn-analyze {
@@ -700,6 +704,9 @@
 
     // 單次可分析的雲端連結上限（要調整只改這一行）
     const MAX_DRIVE_LINKS = 10;
+    // 檔案合計大小上限（MB）。Claude 單次約 32MB，檔案轉 base64 會膨脹約 1.33 倍，故留安全空間
+    const MAX_TOTAL_MB = 20;
+    const sizeCache = {};   // { driveId: {size, accessible, error} }
 
     // State
     let selectedFile = null;
@@ -859,11 +866,69 @@
       refreshDriveControls();
     });
 
-    // 事件委派：輸入更新預覽、點 × 移除該列
-    driveList.addEventListener('input', () => {
+    // ── 事前偵測檔案大小 ──────────────────────────────
+    // 向代理詢問單一檔案大小（只讀標頭、不下載內容），結果快取避免重複查詢
+    async function probeDriveSize(id) {
+      if (sizeCache[id]) return sizeCache[id];
+      try {
+        const resp = await fetch(`/.netlify/functions/drive-file?id=${id}&probe=1`);
+        const data = await resp.json();
+        sizeCache[id] = data;
+        return data;
+      } catch (e) {
+        const fail = { size: null, accessible: true, error: null };
+        sizeCache[id] = fail;
+        return fail;
+      }
+    }
+
+    // 回傳 { total, unknown, blocked, inaccessible }
+    async function probeAllDriveSizes() {
+      const urls = getDriveUrls();
+      const ids = urls.map(extractDriveIdClient).filter(Boolean);
+      const results = await Promise.all(ids.map(probeDriveSize));
+      let total = 0, unknown = 0;
+      const inaccessible = [];
+      results.forEach((r, i) => {
+        if (r.accessible === false) inaccessible.push(i + 1);
+        if (typeof r.size === 'number' && isFinite(r.size)) total += r.size;
+        else unknown++;
+      });
+      return {
+        total,
+        unknown,
+        inaccessible,
+        blocked: total > MAX_TOTAL_MB * 1024 * 1024,
+      };
+    }
+
+    // 更新連結區的提示文字（含合計大小）
+    let probeTimer = null;
+    function updateDrivePreview(runProbe) {
       const n = getDriveUrls().length;
       drivePreview.classList.toggle('visible', n > 0);
-      if (n > 0) drivePreviewText.textContent = `已偵測到 ${n} 個連結`;
+      if (n === 0) { drivePreview.classList.remove('over'); return; }
+      drivePreviewText.textContent = `已偵測到 ${n} 個連結`;
+      if (!runProbe) return;
+
+      clearTimeout(probeTimer);
+      probeTimer = setTimeout(async () => {
+        if (getDriveUrls().length === 0) return;
+        drivePreviewText.textContent = `已偵測到 ${getDriveUrls().length} 個連結・正在估算大小⋯`;
+        const { total, unknown, inaccessible, blocked } = await probeAllDriveSizes();
+        const count = getDriveUrls().length;
+        let msg = `已偵測到 ${count} 個連結・合計約 ${formatSize(total)}`;
+        if (unknown) msg += `（其中 ${unknown} 份大小無法偵測）`;
+        if (inaccessible.length) msg += `・⚠️ 第 ${inaccessible.join('、')} 個連結無法存取`;
+        if (blocked) msg += `・⚠️ 已超過 ${MAX_TOTAL_MB}MB 上限`;
+        drivePreviewText.textContent = msg;
+        drivePreview.classList.toggle('over', blocked || inaccessible.length > 0);
+      }, 800);
+    }
+
+    // 事件委派：輸入更新預覽、點 × 移除該列
+    driveList.addEventListener('input', () => {
+      updateDrivePreview(true);
       hideError(); hideResults(); updateBtn();
     });
 
@@ -877,9 +942,7 @@
         btn.closest('.drive-row').remove();
       }
       refreshDriveControls();
-      const n = getDriveUrls().length;
-      drivePreview.classList.toggle('visible', n > 0);
-      if (n > 0) drivePreviewText.textContent = `已偵測到 ${n} 個連結`;
+      updateDrivePreview(true);
       updateBtn();
     });
 
@@ -896,7 +959,8 @@
       driveList.innerHTML = '';
       driveList.appendChild(makeDriveRow());
       refreshDriveControls();
-      drivePreview.classList.remove('visible');
+      drivePreview.classList.remove('visible', 'over');
+      Object.keys(sizeCache).forEach(k => delete sizeCache[k]);
       document.getElementById('illusSection').style.display = 'none';
       [yearInput, termInput, countyInput, schoolInput, courseInput, instructorInput, audienceInput, likeInput, understandInput]
         .forEach(el => { el.value = ''; el.classList.remove('invalid'); });
@@ -933,6 +997,20 @@
         } else {
           // Google Drive 模式：背景 function + 輪詢（支援多份）
           const urls = getDriveUrls();
+
+          // 分析前先確認總大小，避免白等好幾分鐘才失敗
+          loadingMsg.textContent = '正在確認檔案大小⋯';
+          const check = await probeAllDriveSizes();
+          if (check.inaccessible.length) {
+            throw new Error(`第 ${check.inaccessible.join('、')} 個連結無法存取，請確認分享設定為「知道連結的人都可以檢視」`);
+          }
+          if (check.blocked) {
+            throw new Error(
+              `檔案合計約 ${formatSize(check.total)}，超過 ${MAX_TOTAL_MB}MB 上限，分析會失敗。` +
+              `請減少份數、或將掃描解析度調低後重新上傳。`
+            );
+          }
+
           loadingMsg.textContent = urls.length > 1
             ? `正在下載並合併分析 ${urls.length} 份檔案，請稍候⋯`
             : '正在下載並分析，大型檔案需要較長時間⋯';
