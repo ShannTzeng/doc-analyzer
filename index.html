@@ -194,6 +194,7 @@
     }
     .up-size { font-size: 0.75rem; color: #888; margin-top: 2px; }
     .up-size .shrunk { color: #3a7a28; font-weight: 600; }
+    .up-size .dpi { color: #aaa; margin-left: 2px; }
     .up-size .working { color: #c17d2a; }
     .upload-total {
       display: none; margin-top: 12px; padding: 10px 14px;
@@ -719,6 +720,9 @@
     const UPLOAD_TOTAL_TARGET_MB = 3.5;
     // 單頁渲染逾時：少數 PDF（如大量向量繪圖的設計稿）會極慢，逾時就放棄壓縮改用原檔
     const PAGE_RENDER_TIMEOUT_MS = 30000;
+    // 壓縮起始解析度：300 DPI 足以清楚判讀手寫與圈選；只有總量超標時才往下降
+    const PREFERRED_DPI = 300;
+    const MIN_DPI = 120;
     // 檔案合計大小上限（MB）。Claude 單次約 32MB，檔案轉 base64 會膨脹約 1.33 倍，故留安全空間
     const MAX_TOTAL_MB = 20;
     const sizeCache = {};   // { driveId: {size, accessible, error} }
@@ -816,64 +820,68 @@
       await compressIfNeeded();
     }
 
-    // 依總量決定是否壓縮；每份檔案的目標大小 = 總預算 / 份數
+    // 自適應壓縮：以「總量預算」為限，盡量保留最高畫質
+    // 先用高解析度試，只有總量超過預算時才逐步降，避免白白犧牲判讀品質
     async function compressIfNeeded() {
       const budget = UPLOAD_TOTAL_TARGET_MB * 1024 * 1024;
-      const perFile = budget / Math.max(selectedFiles.length, 1);
+      const isWord = (it) => ['doc', 'docx'].includes(it.ext);
 
-      for (const item of selectedFiles) {
-        if (item.status === 'done') continue;
-        // 已經夠小、或是 Word（無法用此方式壓縮）就跳過
-        if (item.originalSize <= perFile || ['doc','docx'].includes(item.ext)) {
-          item.status = 'done';
-          continue;
-        }
-        item.status = 'working';
+      // 總量本來就在預算內 → 完全不壓縮，保留原始畫質
+      if (uploadTotalBytes() <= budget) {
+        selectedFiles.forEach(it => { it.status = 'done'; });
         renderUploadList(); updateBtn();
-        try {
-          const compressed = await compressFile(item, perFile);
-          if (compressed && compressed.size < item.originalSize) {
-            item.blob = compressed;
-            item.finalSize = compressed.size;
-            item.compressed = true;
-          } else {
-            item.uncompressible = true;
+        return;
+      }
+
+      const targets = selectedFiles.filter(it => !isWord(it));
+      const fixedBytes = selectedFiles.filter(isWord).reduce((s, it) => s + it.originalSize, 0);
+
+      let dpi = PREFERRED_DPI, quality = 0.85;
+
+      for (let pass = 0; pass < 3; pass++) {
+        let total = fixedBytes;
+
+        for (const it of targets) {
+          // 先前已渲染逾時的檔案不再重試，避免每輪又卡 30 秒
+          if (it.renderTimeout) { total += it.finalSize; continue; }
+
+          it.status = 'working';
+          renderUploadList(); updateBtn();
+          try {
+            const out = it.ext === 'pdf'
+              ? await compressPdf(it.file, { dpi, quality })
+              : await compressImage(it.file, { dpi, quality });
+            if (out && out.size < it.originalSize) {
+              it.blob = out; it.finalSize = out.size; it.compressed = true;
+              it.dpi = dpi; it.uncompressible = false;
+            } else {
+              it.blob = it.file; it.finalSize = it.originalSize;
+              it.compressed = false; it.uncompressible = true;
+            }
+          } catch (e) {
+            console.warn('壓縮失敗，改用原檔：', it.name, e);
+            it.blob = it.file; it.finalSize = it.originalSize;
+            it.compressed = false; it.uncompressible = true;
+            if (e && e.message === 'RENDER_TIMEOUT') it.renderTimeout = true;
           }
-        } catch (e) {
-          console.warn('壓縮失敗，改用原檔：', item.name, e);
-          item.uncompressible = true;
+          it.status = 'done';
+          renderUploadList(); updateBtn();
+          total += it.finalSize;
         }
-        item.status = 'done';
-        renderUploadList(); updateBtn();
-      }
-      renderUploadList();
-      updateBtn();
-    }
 
-    // 壓縮單一檔案：PDF 逐頁重繪成較低解析度 JPEG 後重組；圖片則縮圖重新編碼
-    async function compressFile(item, targetBytes) {
-      const attempts = [
-        { dpi: 150, quality: 0.75 },
-        { dpi: 120, quality: 0.65 },
-        { dpi: 100, quality: 0.6 },
-      ];
-      let best = null;
-      for (const opt of attempts) {
-        let out;
-        try {
-          out = item.ext === 'pdf'
-            ? await compressPdf(item.file, opt)
-            : await compressImage(item.file, opt);
-        } catch (e) {
-          // 渲染逾時代表這份 PDF 本身極難處理，再降解析度也一樣，直接放棄
-          if (e && e.message === 'RENDER_TIMEOUT') return null;
-          throw e;
-        }
-        if (!out) continue;
-        if (!best || out.size < best.size) best = out;
-        if (out.size <= targetBytes) return out;   // 已達標就不再壓更小，保留畫質
+        if (total <= budget) break;
+
+        // 檔案大小約與 dpi² 成正比，據此直接估算下一輪需要的解析度
+        const factor = Math.sqrt((budget * 0.9) / total);
+        const next = Math.max(MIN_DPI, Math.floor(dpi * factor));
+        if (next >= dpi) break;                   // 已無法再有效降低
+        dpi = next;
+        quality = Math.max(0.65, quality - 0.05);
+        targets.forEach(it => { if (!it.renderTimeout) it.status = 'pending'; });
       }
-      return best;
+
+      selectedFiles.forEach(it => { it.status = 'done'; });
+      renderUploadList(); updateBtn();
     }
 
     // 帶逾時的頁面渲染：逾時就取消，避免整個頁面卡死
@@ -957,7 +965,8 @@
         if (it.status === 'working') {
           sizeHtml = `<span class="working">壓縮中⋯</span>`;
         } else if (it.compressed) {
-          sizeHtml = `${formatSize(it.originalSize)} → <span class="shrunk">${formatSize(it.finalSize)}</span>`;
+          sizeHtml = `${formatSize(it.originalSize)} → <span class="shrunk">${formatSize(it.finalSize)}</span>`
+            + (it.dpi ? `<span class="dpi">（${it.dpi} DPI）</span>` : '');
         } else if (it.uncompressible) {
           sizeHtml = `${formatSize(it.finalSize)}<span class="working">（此檔無法再壓縮）</span>`;
         } else {
