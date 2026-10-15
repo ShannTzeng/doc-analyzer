@@ -240,6 +240,41 @@
     .sheet-table select:focus { outline: none; border-color: #6ab04c; }
     .sheet-table select.edited { border-color: #6ab04c; background: #f2f9ee; font-weight: 600; }
     .sheet-table .idx { color: #999; }
+    .sheet-table .note {
+      white-space: normal; min-width: 210px; max-width: 320px;
+      font-size: 0.72rem; color: #888; line-height: 1.45;
+    }
+
+    .score-hint { font-size: 0.72rem; color: #6ab04c; margin-top: 4px; min-height: 1em; }
+
+    /* 自動切分結果的縮圖條 */
+    .split-review { display: none; margin: -8px 0 20px; }
+    .split-review.visible { display: block; }
+    .split-strip {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      border: 1px solid #e8e8e0; border-radius: 10px; padding: 12px; background: #fcfcfa;
+    }
+    .split-group {
+      display: flex; gap: 6px; padding: 7px 9px 9px;
+      border: 1px solid #dfe8d8; border-radius: 9px; background: #fff;
+    }
+    .split-group > .g-label {
+      font-size: 0.68rem; font-weight: 700; color: #6ab04c;
+      writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 1px;
+    }
+    .split-page { width: 62px; text-align: center; }
+    .split-page img {
+      width: 62px; height: 86px; object-fit: cover; object-position: top;
+      border: 1px solid #e4e4dc; border-radius: 4px; background: #fff; display: block;
+    }
+    .split-page .p-num { font-size: 0.64rem; color: #999; margin-top: 2px; }
+    .split-page .p-cut {
+      display: block; width: 100%; margin-top: 3px; cursor: pointer;
+      font-size: 0.62rem; padding: 2px 0; border-radius: 4px;
+      border: 1px solid #e0e0d8; background: #f7f7f3; color: #999;
+    }
+    .split-page .p-cut:hover { border-color: #6ab04c; color: #6ab04c; }
+    .split-page .p-cut.on { background: #6ab04c; border-color: #6ab04c; color: #fff; font-weight: 600; }
 
     .img-preview-wrap {
       display: none; margin-top: 12px;
@@ -534,7 +569,7 @@
             </svg>
           </div>
           <h2>拖曳檔案至此，或點擊選擇</h2>
-          <p>可一次選取多份（最多 10 份），檔案過大會<strong>自動壓縮</strong></p>
+          <p>一人一份、或<strong>整班掃成同一份</strong>都可以，系統會自動切分</p>
           <div class="file-types">
             <span class="badge">PDF</span>
             <span class="badge">Word (.docx)</span>
@@ -545,6 +580,19 @@
 
         <div id="uploadList"></div>
         <div class="upload-total" id="uploadTotal"></div>
+
+        <!-- 自動切分結果：每份學習單一組，可人工調整分界 -->
+        <div class="split-review" id="splitReview">
+          <button type="button" class="sheet-toggle" id="splitToggle">
+            <span class="arrow">▸</span> <span id="splitSummary">切分結果</span>
+          </button>
+          <div class="sheet-body" id="splitBody">
+            <div class="sheet-hint">
+              系統依版型自動判斷每份學習單的起始頁。若切分有誤，點縮圖上的「✂ 新的一份」調整分界。
+            </div>
+            <div class="split-strip" id="splitStrip"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Tab: Google Drive -->
@@ -554,7 +602,10 @@
           1. 在 Google 雲端硬碟對檔案按右鍵 → 共用 → 取得連結<br>
           2. 將存取權限設為「<strong>知道連結的人都可以檢視</strong>」<br>
           3. 複製連結貼到下方（支援 PDF、圖片，無大小限制）<br>
-          4. 可一次分析<strong>多份檔案（最多 10 份）</strong>，系統會合併為「同一課程」分析，適合混年級回饋單
+          4. 可一次分析<strong>多份檔案（最多 10 份）</strong>，系統會合併為「同一課程」分析，適合混年級回饋單<br>
+          <br>
+          ⚠️ 本分頁採「一次合併判讀」，量化數字（喜歡程度、聽懂程度、六大亮能）的準確度較低。
+          需要精準統計時，請改用「<strong>上傳檔案</strong>」分頁——該分頁會逐份判讀每位學生，準確度明顯較高。
         </div>
         <div id="driveList">
           <div class="drive-row">
@@ -626,12 +677,14 @@
             <input type="text" id="audienceInput" placeholder="例：一～六年級" />
           </div>
           <div class="field-group">
-            <label>學生喜歡程度（平均）</label>
+            <label>學生喜歡程度（平均 / 4 分）</label>
             <input type="text" id="likeInput" placeholder="—" />
+            <div class="score-hint" id="likeHint"></div>
           </div>
           <div class="field-group">
-            <label>學生理解程度（平均）</label>
+            <label>學生理解程度（平均 / 4 分）</label>
             <input type="text" id="understandInput" placeholder="—" />
+            <div class="score-hint" id="understandHint"></div>
           </div>
         </div>
         <div class="count-note" id="countNote"></div>
@@ -766,26 +819,38 @@
 
     // 單次可分析的雲端連結上限（要調整只改這一行）
     const MAX_DRIVE_LINKS = 10;
-    // 上傳分頁：份數上限，以及壓縮後的總量目標（Netlify 單次請求約 6MB，base64 會膨脹約 1.33 倍）
+    // 上傳分頁：份數上限
     const MAX_UPLOAD_FILES = 10;
-    const UPLOAD_TOTAL_TARGET_MB = 3.5;
-    // 單頁渲染逾時：少數 PDF（如大量向量繪圖的設計稿）會極慢，逾時就放棄壓縮改用原檔
-    const PAGE_RENDER_TIMEOUT_MS = 30000;
-    // 壓縮起始解析度：300 DPI 足以清楚判讀手寫與圈選；只有總量超標時才往下降
-    const PREFERRED_DPI = 300;
-    const MIN_DPI = 120;
+    // 單頁渲染逾時。高解析度掃描檔（35MP 以上）在較慢的機器上可能要十幾秒，
+    // 背景分頁時更慢，因此留寬裕一點，避免正常檔案被誤判成失敗
+    const PAGE_RENDER_TIMEOUT_MS = 90000;
+    // Claude 收到影像後一律把長邊縮到約 1568px，渲染得再大也會被縮掉。
+    // 因此直接以這個尺寸為目標渲染：一次到位、不浪費頻寬、也不損失任何判讀資訊
+    const TARGET_LONG_EDGE = 1568;
+    const PAGE_JPEG_QUALITY = 0.82;
+    // 每批暫存上傳的大小上限（Netlify 同步 function 單次請求約 6MB，base64 會膨脹約 1.33 倍）
+    const STAGE_CHUNK_BYTES = 2.6 * 1024 * 1024;
+    // 整班總頁數上限（30 位 × 2 頁，再留一點餘裕）
+    const MAX_PAGES = 70;
+    // 切分判定門檻（見 detectSheetStarts）。實測首頁彼此 0.94～0.98、續頁最高 0.70
+    const SPLIT_ABS_FLOOR = 0.80;   // 絕對下限：低於此值不算版型吻合
+    const SPLIT_REL_BAND = 0.15;    // 與最高分的容許差距
+    const SIG_W = 48, SIG_H = 68;    // 版型指紋的取樣尺寸
     // 檔案合計大小上限（MB）。Claude 單次約 32MB，檔案轉 base64 會膨脹約 1.33 倍，故留安全空間
     const MAX_TOTAL_MB = 20;
     const sizeCache = {};   // { driveId: {size, accessible, error} }
 
     // State
-    let selectedFiles = [];   // [{file, ext, name, originalSize, finalSize, blob, compressed, status}]
+    let selectedFiles = [];   // [{file, ext, name, originalSize, pageCount, status}]
+    let pageItems = [];       // [{fileIdx, fileName, srcPage, dataUrl, bytes, sig, isStart}]
     let activeTab = 'upload';
     let capturedImageBase64 = null;
     let reportImages = [];
     let analysis = null;          // 完整分析結果
     let likeScaleState = 5;
     let understandScaleState = 5;
+    let likePositiveState = null;         // 正向比例（%），由各選項人數算出
+    let understandPositiveState = null;
 
     // Elements
     const dropZone    = document.getElementById('dropZone');
@@ -868,78 +933,251 @@
 
       renderUploadList();
       updateBtn();
-      await compressIfNeeded();
+      await preparePages();
     }
 
-    // 自適應壓縮：以「總量預算」為限，盡量保留最高畫質
-    // 先用高解析度試，只有總量超過預算時才逐步降，避免白白犧牲判讀品質
-    async function compressIfNeeded() {
-      const budget = UPLOAD_TOTAL_TARGET_MB * 1024 * 1024;
+    // ── 頁面準備：渲染 → 版型指紋 → 自動切分 ──────────────
+    // 每一頁都渲染成 1568px 長邊的 JPEG（Claude 的實際上限），一次到位不需多輪壓縮
+    async function preparePages() {
+      pageItems = [];
       const isWord = (it) => ['doc', 'docx'].includes(it.ext);
 
-      // 總量本來就在預算內 → 完全不壓縮，保留原始畫質
-      if (uploadTotalBytes() <= budget) {
-        selectedFiles.forEach(it => { it.status = 'done'; });
+      for (let fi = 0; fi < selectedFiles.length; fi++) {
+        const it = selectedFiles[fi];
+        if (isWord(it)) { it.status = 'done'; it.pageCount = null; continue; }
+
+        it.status = 'working';
         renderUploadList(); updateBtn();
-        return;
-      }
-
-      const targets = selectedFiles.filter(it => !isWord(it));
-      const fixedBytes = selectedFiles.filter(isWord).reduce((s, it) => s + it.originalSize, 0);
-
-      let dpi = PREFERRED_DPI, quality = 0.85;
-
-      for (let pass = 0; pass < 3; pass++) {
-        let total = fixedBytes;
-
-        for (const it of targets) {
-          // 先前已渲染逾時的檔案不再重試，避免每輪又卡 30 秒
-          if (it.renderTimeout) { total += it.finalSize; continue; }
-
-          it.status = 'working';
-          renderUploadList(); updateBtn();
-          try {
-            const out = it.ext === 'pdf'
-              ? await compressPdf(it.file, { dpi, quality })
-              : await compressImage(it.file, { dpi, quality });
-            if (out && out.size < it.originalSize) {
-              it.blob = out; it.finalSize = out.size; it.compressed = true;
-              it.dpi = dpi; it.uncompressible = false;
-            } else {
-              it.blob = it.file; it.finalSize = it.originalSize;
-              it.compressed = false; it.uncompressible = true;
-            }
-          } catch (e) {
-            console.warn('壓縮失敗，改用原檔：', it.name, e);
-            it.blob = it.file; it.finalSize = it.originalSize;
-            it.compressed = false; it.uncompressible = true;
-            if (e && e.message === 'RENDER_TIMEOUT') it.renderTimeout = true;
-          }
-          it.status = 'done';
-          renderUploadList(); updateBtn();
-          total += it.finalSize;
+        try {
+          const pages = it.ext === 'pdf'
+            ? await renderPdfToPages(it.file)
+            : [await renderImageToPage(it.file)];
+          pages.forEach((p, pi) => {
+            pageItems.push({
+              fileIdx: fi + 1, fileName: it.name, srcPage: pi + 1,
+              dataUrl: p.dataUrl, bytes: p.bytes, sig: p.sig, isStart: false,
+            });
+          });
+          it.pageCount = pages.length;
+          it.finalSize = pages.reduce((s, p) => s + p.bytes, 0);
+          it.renderFailed = false;
+        } catch (e) {
+          console.warn('頁面渲染失敗：', it.name, e);
+          it.renderFailed = true;
+          it.pageCount = 0;
         }
-
-        if (total <= budget) break;
-
-        // 檔案大小約與 dpi² 成正比，據此直接估算下一輪需要的解析度
-        const factor = Math.sqrt((budget * 0.9) / total);
-        const next = Math.max(MIN_DPI, Math.floor(dpi * factor));
-        if (next >= dpi) break;                   // 已無法再有效降低
-        dpi = next;
-        quality = Math.max(0.65, quality - 0.05);
-        targets.forEach(it => { if (!it.renderTimeout) it.status = 'pending'; });
+        it.status = 'done';
+        renderUploadList(); updateBtn();
       }
 
-      selectedFiles.forEach(it => { it.status = 'done'; });
-      renderUploadList(); updateBtn();
+      detectSheetStarts();
+      renderSplitStrip();
+      renderUploadList();
+      updateBtn();
     }
+
+    async function renderPdfToPages(file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+      const out = [];
+      const limit = Math.min(pdf.numPages, MAX_PAGES);
+      for (let i = 1; i <= limit; i++) {
+        const page = await pdf.getPage(i);
+        const base = page.getViewport({ scale: 1 });
+        const scale = TARGET_LONG_EDGE / Math.max(base.width, base.height);
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await renderWithTimeout(page, viewport, ctx);
+        out.push(packPage(canvas));
+      }
+      return out;
+    }
+
+    async function renderImageToPage(file) {
+      const dataUrl = await blobToDataURL(file);
+      const img = await new Promise((res, rej) => {
+        const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl;
+      });
+      const ratio = Math.min(1, TARGET_LONG_EDGE / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * ratio);
+      canvas.height = Math.round(img.height * ratio);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return packPage(canvas);
+    }
+
+    function packPage(canvas) {
+      const dataUrl = canvas.toDataURL('image/jpeg', PAGE_JPEG_QUALITY);
+      const b64 = dataUrl.split(',')[1] || '';
+      return { dataUrl, bytes: Math.round(b64.length * 0.75), sig: signatureOf(canvas) };
+    }
+
+    // 版型指紋：縮成極小的灰階向量並減去平均值，之後用餘弦相似度比對。
+    // 學習單首頁的印刷版型每份都相同，因此首頁彼此會高度相關；
+    // 續頁（自由繪圖）則不會。這樣就不必硬編特定版型，改版後依然適用
+    function signatureOf(canvas) {
+      // 一次縮到 48×68 會嚴重鋸齒化（掃描檔的方格紙紋路會變成雜訊，
+      // 把相似度從 0.95 拉低到 0.7），因此先逐次對半縮小做平均，再縮到最終尺寸
+      let src = canvas;
+      while (src.width > SIG_W * 2 && src.height > SIG_H * 2) {
+        const half = document.createElement('canvas');
+        half.width = Math.max(SIG_W, Math.round(src.width / 2));
+        half.height = Math.max(SIG_H, Math.round(src.height / 2));
+        const hctx = half.getContext('2d');
+        hctx.imageSmoothingEnabled = true;
+        hctx.imageSmoothingQuality = 'high';
+        hctx.drawImage(src, 0, 0, half.width, half.height);
+        src = half;
+      }
+
+      const c = document.createElement('canvas');
+      c.width = SIG_W; c.height = SIG_H;
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, SIG_W, SIG_H);
+      ctx.drawImage(src, 0, 0, SIG_W, SIG_H);
+      const d = ctx.getImageData(0, 0, SIG_W, SIG_H).data;
+      const v = new Float32Array(SIG_W * SIG_H);
+      let mean = 0;
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+        const ink = 255 - (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+        v[p] = ink; mean += ink;
+      }
+      mean /= v.length;
+      let norm = 0;
+      for (let i = 0; i < v.length; i++) { v[i] -= mean; norm += v[i] * v[i]; }
+      norm = Math.sqrt(norm) || 1;
+      for (let i = 0; i < v.length; i++) v[i] /= norm;
+      return v;    // 已正規化，相似度 = 內積
+    }
+
+    function similarity(a, b) {
+      let s = 0;
+      for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+      return s;
+    }
+
+    // 判斷每一頁是不是「新的一份學習單的首頁」
+    //
+    // 原理：學習單首頁的印刷版型每份都一樣，所以首頁彼此的相似度會明顯高於續頁
+    // （續頁是自由繪圖，彼此只有少量共通的印刷說明文字）。
+    // 不用固定門檻，而是找「排序後落差最大的那一刀」——因為相似度的絕對值會隨
+    // 掃描品質、紙張紋路而整批偏移，但高低兩群之間的落差一直都很明顯。
+    function detectSheetStarts() {
+      if (!pageItems.length) return;
+      pageItems.forEach(p => { p.isStart = false; p.sim = 0; });
+
+      // 每一頁和「其他頁」的最高相似度
+      for (let i = 0; i < pageItems.length; i++) {
+        let best = -1;
+        for (let j = 0; j < pageItems.length; j++) {
+          if (i === j) continue;
+          const s = similarity(pageItems[i].sig, pageItems[j].sig);
+          if (s > best) best = s;
+        }
+        pageItems[i].sim = best;
+      }
+
+      // 門檻有兩個條件，取較嚴格者：
+      //   1. 絕對下限 —— 要夠像才算「版型吻合」。實測首頁 0.94～0.98、續頁最高 0.70
+      //   2. 相對於最高分 —— 最高分那頁必定是首頁，其餘首頁都會緊貼著它
+      // 不用「找最大落差」是因為續頁之間也可能有次大落差，兩者曾只差 0.003 就選錯邊
+      const maxSim = Math.max(...pageItems.map(p => p.sim));
+      const cut = Math.max(SPLIT_ABS_FLOOR, maxSim - SPLIT_REL_BAND);
+      pageItems.forEach(p => { p.simCut = cut; });
+      pageItems.forEach(p => { p.isStart = p.sim >= cut; });
+
+      // 完全沒有任何一頁達標（例如整批只有一份，沒有對照組）→ 退回「一個檔案一份」
+      if (!pageItems.some(p => p.isStart)) {
+        pageItems.forEach((p, i) => {
+          p.isStart = i === 0 || p.fileIdx !== pageItems[i - 1].fileIdx;
+        });
+      }
+
+      // 不同檔案不會接續，每個檔案的第一頁一定是一份的開始
+      pageItems.forEach((p, i) => {
+        if (i === 0 || p.fileIdx !== pageItems[i - 1].fileIdx) p.isStart = true;
+      });
+    }
+
+    // 依 isStart 把頁面分組成「每份學習單」
+    function buildSheets() {
+      const sheets = [];
+      pageItems.forEach((p) => {
+        if (p.isStart || !sheets.length) sheets.push([]);
+        sheets[sheets.length - 1].push(p);
+      });
+      return sheets;
+    }
+
+    function renderSplitStrip() {
+      const wrap = document.getElementById('splitReview');
+      const strip = document.getElementById('splitStrip');
+      if (!pageItems.length) { wrap.classList.remove('visible'); strip.innerHTML = ''; return; }
+
+      const sheets = buildSheets();
+      document.getElementById('splitSummary').textContent =
+        `切分結果：${pageItems.length} 頁 → ${sheets.length} 份學習單（可核對與調整）`;
+
+      strip.innerHTML = '';
+      sheets.forEach((pages, si) => {
+        const g = document.createElement('div');
+        g.className = 'split-group';
+        g.innerHTML = `<div class="g-label">${si + 1}</div>` + pages.map((p) => {
+          const gi = pageItems.indexOf(p);
+          return `<div class="split-page">`
+            + `<img src="${p.dataUrl}" alt="第${p.srcPage}頁">`
+            + `<div class="p-num">${escapeHtml(shortName(p.fileName))} p${p.srcPage}</div>`
+            + `<button type="button" class="p-cut${p.isStart ? ' on' : ''}" data-page="${gi}">`
+            + `${p.isStart ? '✂ 新的一份' : '併入前一份'}</button>`
+            + `</div>`;
+        }).join('');
+        strip.appendChild(g);
+      });
+      wrap.classList.add('visible');
+    }
+
+    function shortName(n) {
+      const base = (n || '').replace(/\.[^.]+$/, '');
+      return base.length > 7 ? base.slice(0, 6) + '…' : base;
+    }
+
+    document.getElementById('splitToggle').addEventListener('click', () => {
+      document.getElementById('splitToggle').classList.toggle('open');
+      document.getElementById('splitBody').classList.toggle('open');
+    });
+
+    document.getElementById('splitStrip').addEventListener('click', (e) => {
+      const btn = e.target.closest('.p-cut');
+      if (!btn) return;
+      const i = Number(btn.dataset.page);
+      const p = pageItems[i];
+      if (!p) return;
+      // 第一頁永遠是一份的開始，不可取消
+      if (i === 0) return;
+      p.isStart = !p.isStart;
+      renderSplitStrip();
+    });
 
     // 帶逾時的頁面渲染：逾時就取消，避免整個頁面卡死
     // 注意：取消後 task.promise 會以 RenderingCancelledException 拒絕，
     // 因此只 await task.promise（不用 Promise.race），避免產生未處理的例外
+    //
+    // intent:'print' 很重要：PDF.js 預設用 requestAnimationFrame 排程繪製，
+    // 而瀏覽器在背景分頁不會觸發 rAF，使用者只要切到別的分頁，渲染就會永遠卡住。
+    // print intent 不走 rAF，切分頁也能順利跑完。
     async function renderWithTimeout(page, viewport, ctx) {
-      const task = page.render({ canvasContext: ctx, viewport });
+      const task = page.render({ canvasContext: ctx, viewport, intent: 'print' });
       let timedOut = false;
       const timer = setTimeout(() => {
         timedOut = true;
@@ -954,57 +1192,8 @@
       }
     }
 
-    async function compressPdf(file, { dpi, quality }) {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-      const { jsPDF } = window.jspdf;
-      let doc = null;
-      const scale = dpi / 72;   // PDF 內部單位為 72 DPI
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const base = page.getViewport({ scale: 1 });        // 頁面實際尺寸（pt）
-        const viewport = page.getViewport({ scale });        // 繪製解析度
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await renderWithTimeout(page, viewport, ctx);
-        const img = canvas.toDataURL('image/jpeg', quality);
-
-        const orientation = base.width > base.height ? 'landscape' : 'portrait';
-        if (!doc) doc = new jsPDF({ unit: 'pt', format: [base.width, base.height], orientation });
-        else doc.addPage([base.width, base.height], orientation);
-        doc.addImage(img, 'JPEG', 0, 0, base.width, base.height);
-      }
-      return doc ? doc.output('blob') : null;
-    }
-
-    async function compressImage(file, { dpi, quality }) {
-      const dataUrl = await new Promise((res, rej) => {
-        const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej;
-        r.readAsDataURL(file);
-      });
-      const img = await new Promise((res, rej) => {
-        const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl;
-      });
-      // 以 dpi 換算最長邊上限（A4 長邊約 11.7 吋）
-      const maxEdge = Math.round(dpi * 11.7);
-      const ratio = Math.min(1, maxEdge / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * ratio);
-      canvas.height = Math.round(img.height * ratio);
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      return await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
-    }
-
     function uploadTotalBytes() {
-      return selectedFiles.reduce((s, it) => s + it.finalSize, 0);
+      return pageItems.reduce((s, p) => s + p.bytes, 0);
     }
 
     function renderUploadList() {
@@ -1014,12 +1203,11 @@
         const cls = it.ext === 'pdf' ? 'pdf' : ['doc','docx'].includes(it.ext) ? 'word' : 'img';
         let sizeHtml;
         if (it.status === 'working') {
-          sizeHtml = `<span class="working">壓縮中⋯</span>`;
-        } else if (it.compressed) {
-          sizeHtml = `${formatSize(it.originalSize)} → <span class="shrunk">${formatSize(it.finalSize)}</span>`
-            + (it.dpi ? `<span class="dpi">（${it.dpi} DPI）</span>` : '');
-        } else if (it.uncompressible) {
-          sizeHtml = `${formatSize(it.finalSize)}<span class="working">（此檔無法再壓縮）</span>`;
+          sizeHtml = `<span class="working">正在讀取頁面⋯</span>`;
+        } else if (it.renderFailed) {
+          sizeHtml = `<span class="warn">讀取失敗，請確認檔案是否損毀</span>`;
+        } else if (it.pageCount) {
+          sizeHtml = `${it.pageCount} 頁 ・ ${formatSize(it.originalSize)} → <span class="shrunk">${formatSize(it.finalSize)}</span>`;
         } else {
           sizeHtml = formatSize(it.finalSize);
         }
@@ -1034,31 +1222,31 @@
 
       const total = uploadTotalBytes();
       const busy = selectedFiles.some(f => f.status !== 'done');
-      const over = total > UPLOAD_TOTAL_TARGET_MB * 1024 * 1024;
+      const over = pageItems.length > MAX_PAGES;
       if (selectedFiles.length) {
         uploadTotal.classList.add('visible');
-        // 壓縮尚未完成時先不下「超標」結論，避免誤導
+        // 頁面尚未讀完時先不下「超標」結論，避免誤導
         uploadTotal.classList.toggle('over', over && !busy);
         if (busy) {
-          uploadTotal.textContent = `共 ${selectedFiles.length} 份・正在壓縮，請稍候⋯`;
+          uploadTotal.textContent = `共 ${selectedFiles.length} 份檔案・正在讀取頁面，請稍候⋯`;
         } else {
           uploadTotal.textContent = over
-            ? `共 ${selectedFiles.length} 份・合計 ${formatSize(total)}・⚠️ 已超過 ${UPLOAD_TOTAL_TARGET_MB}MB，請減少份數或改用「Google 雲端連結」分頁`
-            : `共 ${selectedFiles.length} 份・合計 ${formatSize(total)}`;
+            ? `共 ${pageItems.length} 頁・⚠️ 超過 ${MAX_PAGES} 頁上限，請分批分析`
+            : `共 ${pageItems.length} 頁・合計 ${formatSize(total)}（將分批上傳，每頁都維持最高可用畫質）`;
         }
       } else {
         uploadTotal.classList.remove('visible', 'over');
       }
     }
 
-    uploadList.addEventListener('click', (e) => {
+    uploadList.addEventListener('click', async (e) => {
       const btn = e.target.closest('.btn-remove');
       if (!btn) return;
       selectedFiles.splice(Number(btn.dataset.idx), 1);
       reportImages = [];
-      renderUploadList();
-      updateBtn();
       hideError();
+      // 檔案索引會整體位移，重新讀取頁面與切分最單純也最不易出錯
+      await preparePages();
     });
 
     // 多連結：收集所有有效的 Google Drive 連結
@@ -1188,9 +1376,10 @@
     }
 
     btnAgain.addEventListener('click', () => {
-      selectedFiles = []; capturedImageBase64 = null; reportImages = [];
+      selectedFiles = []; pageItems = []; capturedImageBase64 = null; reportImages = [];
       fileInput.value = '';
       renderUploadList();
+      renderSplitStrip();
       driveList.innerHTML = '';
       driveList.appendChild(makeDriveRow());
       refreshDriveControls();
@@ -1202,6 +1391,8 @@
       document.getElementById('countNote').classList.remove('visible', 'over');
       [yearInput, termInput, countyInput, schoolInput, courseInput, instructorInput, audienceInput, likeInput, understandInput]
         .forEach(el => { el.value = ''; el.classList.remove('invalid'); });
+      likePositiveState = null; understandPositiveState = null;
+      updateScoreHints();
       analysis = null;
       hideResults(); hideError(); updateBtn();
     });
@@ -1216,59 +1407,88 @@
         let result;
 
         if (activeTab === 'upload') {
-          // 直接上傳模式（可多檔，壓縮後合併分析）
-          const total = uploadTotalBytes();
-          if (total > UPLOAD_TOTAL_TARGET_MB * 1024 * 1024) {
-            throw new Error(
-              `檔案合計 ${formatSize(total)}，壓縮後仍超過 ${UPLOAD_TOTAL_TARGET_MB}MB 上限。` +
-              `請減少份數，或改用「Google 雲端連結」分頁（可處理更大的檔案）。`
-            );
+          // 上傳模式：前端已把每一頁渲染好並切分成「每份學習單」，
+          // 分批暫存後交由背景 function 逐份判讀（避免一次塞太多頁導致判讀失準）
+          const wordFiles = selectedFiles.filter(it => ['doc','docx'].includes(it.ext));
+          if (!pageItems.length && !wordFiles.length) {
+            throw new Error('沒有可分析的頁面，請確認檔案是否正常');
           }
-          loadingMsg.textContent = selectedFiles.length > 1
-            ? `正在上傳並合併分析 ${selectedFiles.length} 份檔案⋯`
-            : 'Claude 正在分析中，請稍候⋯';
-
-          const files = [];
-          for (const it of selectedFiles) {
-            files.push({
-              fileData: await toBase64(it.blob),
-              mimeType: it.blob.type || getMimeFromExt(it.name),
-              fileName: it.name,
-            });
+          // Word 只能走純文字擷取，無法與掃描頁一起逐份判讀；混用會讓其中一種被默默忽略
+          if (pageItems.length && wordFiles.length) {
+            throw new Error('Word 檔無法和 PDF／圖片一起分析，請分兩次上傳');
+          }
+          if (pageItems.length > MAX_PAGES) {
+            throw new Error(`共 ${pageItems.length} 頁，超過 ${MAX_PAGES} 頁上限，請分批分析`);
           }
 
-          // 兩段式：先用同步 function 把檔案暫存（背景 function 的請求上限僅 256KB），
-          // 再用極小的請求通知背景 function 分析（避開同步 function 的 26 秒上限）
           const jobId = genId();
 
-          loadingMsg.textContent = '正在上傳檔案⋯';
-          const stage = await fetch('/.netlify/functions/stage-upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId, files }),
-          });
-          if (stage.status === 413) {
-            throw new Error('上傳內容過大，請減少份數後再試');
+          // Word 走舊路徑（純文字擷取），不參與逐份判讀
+          if (!pageItems.length) {
+            const files = [];
+            for (const it of wordFiles) {
+              files.push({
+                fileData: await toBase64(it.file),
+                mimeType: it.file.type || getMimeFromExt(it.name),
+                fileName: it.name,
+              });
+            }
+            loadingMsg.textContent = '正在上傳檔案⋯';
+            await stagePost({ jobId, files });
+            loadingMsg.textContent = 'Claude 正在分析中，請稍候⋯';
+            await fetch('/.netlify/functions/analyze-large-background', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId, staged: true }),
+            });
+            await new Promise(r => setTimeout(r, 3000));
+            result = await pollJobResult(jobId, 420);
+
+          } else {
+            const sheets = buildSheets();
+
+            // 攤平成帶有「第幾份」標記的頁面清單
+            const payload = [];
+            sheets.forEach((pages, si) => {
+              pages.forEach((p, pi) => {
+                payload.push({
+                  sheet: si, idx: pi,
+                  file: p.fileIdx, fileName: p.fileName, srcPage: p.srcPage,
+                  mime: 'image/jpeg',
+                  data: p.dataUrl.split(',')[1],
+                });
+              });
+            });
+
+            // 依位元組上限切成多批依序上傳（單次請求上限約 6MB，整班 30 位會超過）
+            const chunks = [];
+            let cur = [], curBytes = 0;
+            for (const pg of payload) {
+              const size = pg.data.length;
+              if (cur.length && curBytes + size > STAGE_CHUNK_BYTES) {
+                chunks.push(cur); cur = []; curBytes = 0;
+              }
+              cur.push(pg); curBytes += size;
+            }
+            if (cur.length) chunks.push(cur);
+
+            for (let i = 0; i < chunks.length; i++) {
+              loadingMsg.textContent = chunks.length > 1
+                ? `正在上傳（第 ${i + 1} / ${chunks.length} 批）⋯`
+                : '正在上傳檔案⋯';
+              await stagePost({ jobId, chunk: i, pages: chunks[i] });
+            }
+
+            loadingMsg.textContent = `正在逐份判讀 ${sheets.length} 份學習單⋯`;
+            await fetch('/.netlify/functions/analyze-large-background', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId, staged: true, chunks: chunks.length, sheetCount: sheets.length }),
+            });
+
+            await new Promise(r => setTimeout(r, 3000));
+            result = await pollJobResult(jobId, 600, sheets.length);
           }
-          const ctStage = stage.headers.get('content-type') || '';
-          if (!stage.ok || !ctStage.includes('application/json')) {
-            throw new Error(`上傳失敗（HTTP ${stage.status}），請減少份數或稍後再試`);
-          }
-          const stageData = await stage.json();
-          if (stageData.error) throw new Error(stageData.error);
-
-          loadingMsg.textContent = selectedFiles.length > 1
-            ? `正在合併分析 ${selectedFiles.length} 份檔案，請稍候⋯`
-            : 'Claude 正在分析中，請稍候⋯';
-
-          await fetch('/.netlify/functions/analyze-large-background', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId, staged: true }),
-          });
-
-          await new Promise(r => setTimeout(r, 3000));
-          result = await pollJobResult(jobId, 420);
 
         } else {
           // Google Drive 模式：背景 function + 輪詢（支援多份）
@@ -1327,32 +1547,34 @@
       }
     });
 
+    // 暫存上傳（同步 function，會回傳 JSON）
+    async function stagePost(body) {
+      const res = await fetch('/.netlify/functions/stage-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 413) throw new Error('單批上傳內容過大，請減少份數後再試');
+      const ct = res.headers.get('content-type') || '';
+      if (!res.ok || !ct.includes('application/json')) {
+        throw new Error(`上傳失敗（HTTP ${res.status}），請減少份數或稍後再試`);
+      }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    }
+
     // 依插圖資訊 [{file, page}] 準備報告用的圖片
     async function buildReportImages(illustrations) {
       reportImages = [];
       const pagesFor = (fileIdx) => illustrations.filter(i => (i.file || 1) === fileIdx).map(i => i.page);
-      const allPages = illustrations.map(i => i.page);
 
-      // 上傳模式：可能多份，依 file 索引對應到正確的檔案
-      if (activeTab === 'upload' && selectedFiles.length) {
-        let fileIdxs = Array.from(new Set(illustrations.map(i => i.file || 1)));
-        if (!fileIdxs.length) fileIdxs = [1];
-
-        for (const fileIdx of fileIdxs) {
-          const item = selectedFiles[fileIdx - 1];
-          if (!item) continue;
-          try {
-            if (item.ext === 'pdf') {
-              const bytes = new Uint8Array(await item.blob.arrayBuffer());
-              const imgs = await renderPdfPages(bytes, pagesFor(fileIdx));
-              reportImages.push(...imgs);
-            } else if (item.blob.type.startsWith('image/')) {
-              reportImages.push(await blobToDataURL(item.blob));
-            }
-          } catch (e) {
-            console.warn(`上傳檔 #${fileIdx} 渲染失敗：`, e);
-          }
-        }
+      // 上傳模式：頁面影像已在前端渲染過，直接取用即可
+      if (activeTab === 'upload' && pageItems.length) {
+        illustrations.forEach(ill => {
+          const hit = pageItems.find(p => p.fileIdx === (ill.file || 1) && p.srcPage === ill.page);
+          if (hit) reportImages.push(hit.dataUrl);
+        });
         reportImages = reportImages.slice(0, 3);
         return;
       }
@@ -1401,7 +1623,7 @@
       sec.style.display = 'block';
     }
 
-    async function pollJobResult(jobId, maxSeconds) {
+    async function pollJobResult(jobId, maxSeconds, sheetTotal) {
       const interval = 5000;
       const maxAttempts = Math.ceil((maxSeconds * 1000) / interval);
       for (let i = 0; i < maxAttempts; i++) {
@@ -1415,6 +1637,12 @@
           const data = await resp.json();
           if (data.status === 'done') return data;
           if (data.status === 'error') throw new Error(data.error || '分析失敗，請重試');
+          // 逐份判讀會回報進度，讓使用者知道還要等多久
+          if (sheetTotal && Number.isInteger(data.done)) {
+            loadingMsg.textContent = data.done >= sheetTotal
+              ? '判讀完成，正在彙整三份報告重點⋯'
+              : `正在逐份判讀⋯（${data.done} / ${sheetTotal} 份）`;
+          }
         } catch (e) {
           if (e.message !== '分析失敗，請重試' && !e.message.includes('error')) continue;
           throw e;
@@ -1443,6 +1671,7 @@
           evidence: (it.querySelector('.comp-ev-edit') ? it.querySelector('.comp-ev-edit').textContent : '').trim(),
           avg: it.dataset.avg != null && it.dataset.avg !== '' ? Number(it.dataset.avg) : null,
           n: it.dataset.n != null && it.dataset.n !== '' ? Number(it.dataset.n) : null,
+          positive: it.dataset.positive != null && it.dataset.positive !== '' ? Number(it.dataset.positive) : null,
           excluded: it.dataset.excluded != null && it.dataset.excluded !== '' ? Number(it.dataset.excluded) : null,
         }));
     }
@@ -1493,8 +1722,16 @@
       const instructor = instructorInput.value.trim();
       const audienceStr = audienceInput.value.trim() || '—';
       const dateStr = new Date().toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric' });
-      const likeStr = likeInput.value.trim() ? `${escapeHtml(likeInput.value.trim())} / ${likeScaleState}` : '—';
-      const understandStr = understandInput.value.trim() ? `${escapeHtml(understandInput.value.trim())} / ${understandScaleState}` : '—';
+      // 1～4 分制：分母一定寫出來，避免被當成 5 分制；
+      // 另附「正向比例」（前兩個選項的佔比），這才是不會被誤讀的百分比
+      const scoreStr = (val, scale, positive) => {
+        const v = val.trim();
+        if (!v) return '—';
+        const base = `${escapeHtml(v)} / ${scale} 分`;
+        return positive != null ? `${base}（正向 ${positive}%）` : base;
+      };
+      const likeStr = scoreStr(likeInput.value, likeScaleState, likePositiveState);
+      const understandStr = scoreStr(understandInput.value, understandScaleState, understandPositiveState);
 
       const bullets = getCheckedTexts(lists[audience]);
       const bulletsHtml = bullets.length
@@ -1510,7 +1747,9 @@
           comps.map(c => {
             const img = (window.COMPETENCY_IMAGES && window.COMPETENCY_IMAGES[c.name]) || '';
             const stat = (c.avg != null && c.n != null)
-              ? `<div class="comp-stat">平均 ${c.avg} / 4（有效樣本 ${c.n} 人${c.excluded ? `，排除「不確定」${c.excluded} 人` : ''}）</div>`
+              ? `<div class="comp-stat">平均 ${c.avg} / 4 分`
+                + `${c.positive != null ? `・正向 ${c.positive}%` : ''}`
+                + `（有效樣本 ${c.n} 人${c.excluded ? `，排除「不確定」${c.excluded} 人` : ''}）</div>`
               : '';
             return `<div class="comp-block">${img ? `<img src="${img}" alt="${c.name}">` : ''}<div class="comp-text"><div class="comp-name">${c.name}</div>${stat}<div class="comp-ev">${escapeHtml(c.evidence)}</div></div></div>`;
           }).join('') + `</div>`
@@ -1631,25 +1870,31 @@
       understandInput.value = analysis.understandScore != null ? analysis.understandScore : '';
       likeScaleState = analysis.likeScale || 5;
       understandScaleState = analysis.understandScale || 5;
+      likePositiveState = analysis.likePositive != null ? analysis.likePositive : null;
+      understandPositiveState = analysis.understandPositive != null ? analysis.understandPositive : null;
+      updateScoreHints();
       if (analysis.audience && !audienceInput.value.trim()) audienceInput.value = analysis.audience;
 
       // 顯示清點結果，方便人工核對數字是否正確
       const noteEl = document.getElementById('countNote');
       const parts = [];
       if (analysis.studentCount) parts.push(`本次共判讀 ${analysis.studentCount} 份學習單`);
+      const pct = (v) => (v != null ? `　→ 正向比例 ${v}%` : '');
       if (analysis.likeCounts) {
         parts.push('喜歡程度：' + ['超級喜歡','喜歡','還好','不太喜歡']
-          .map(k => `${k} ${Number(analysis.likeCounts[k]) || 0}`).join('・'));
+          .map(k => `${k} ${Number(analysis.likeCounts[k]) || 0}`).join('・') + pct(analysis.likePositive));
       }
       if (analysis.understandCounts) {
         parts.push('聽懂程度：' + ['全部聽懂','大部分聽懂','聽懂一點點','幾乎沒聽懂']
-          .map(k => `${k} ${Number(analysis.understandCounts[k]) || 0}`).join('・'));
+          .map(k => `${k} ${Number(analysis.understandCounts[k]) || 0}`).join('・') + pct(analysis.understandPositive));
       }
       const bad = analysis.likeMismatch || analysis.understandMismatch
         || (analysis.competencies || []).some(c => c.mismatch);
+      const failed = Number(analysis.failedSheets) || 0;
       if (parts.length) {
         noteEl.innerHTML = parts.join('<br>')
-          + (bad ? '<br><span class="warn">⚠️ 部分題目的清點人數與總份數不符，數字可能有誤，建議人工核對</span>' : '');
+          + (bad ? '<br><span class="warn">⚠️ 部分題目的清點人數與總份數不符，數字可能有誤，建議人工核對</span>' : '')
+          + (failed ? `<br><span class="warn">⚠️ 有 ${failed} 份判讀失敗（已列為「未作答」），請在下方逐份判讀結果補填</span>` : '');
         noteEl.classList.add('visible');
         noteEl.classList.toggle('over', bad);
       } else {
@@ -1705,13 +1950,34 @@
     const UNDERSTAND_OPTS = ['全部聽懂', '大部分聽懂', '聽懂一點點', '幾乎沒聽懂', '未作答'];
     const COMP_OPTS = [['很像我','很像'], ['有點像我','有點像'], ['不太像我','不太像'], ['很不像我','很不像'], ['我不確定','不確定'], ['未作答','未答']];
 
-    function avgOf(counts, map) {
-      let sum = 0, n = 0;
+    // 正向比例（top-2-box）的分子選項。平均分是 1～4 分制，
+    // 直接換成百分比會把最低分算成 25%，因此改用「前兩個選項的佔比」
+    const LIKE_TOP2 = ['超級喜歡', '喜歡'];
+    const UNDERSTAND_TOP2 = ['全部聽懂', '大部分聽懂'];
+    const COMP_TOP2 = ['很像我', '有點像我'];
+
+    function avgOf(counts, map, topKeys) {
+      let sum = 0, n = 0, top = 0;
       Object.entries(map).forEach(([opt, val]) => {
         const c = Number(counts[opt]) || 0;
         sum += val * c; n += c;
+        if (topKeys && topKeys.includes(opt)) top += c;
       });
-      return { score: n ? Math.round((sum / n) * 10) / 10 : null, n };
+      return {
+        score: n ? Math.round((sum / n) * 10) / 10 : null,
+        n,
+        positive: n && topKeys ? Math.round((top / n) * 100) : null,
+      };
+    }
+
+    // 分數旁的輔助說明：把分母和正向比例寫清楚，避免 3.3 被誤讀成 3.3/5
+    function updateScoreHints() {
+      const line = (positive, topLabel) =>
+        positive != null ? `正向比例 ${positive}%（${topLabel}）` : '';
+      const lh = document.getElementById('likeHint');
+      const uh = document.getElementById('understandHint');
+      if (lh) lh.textContent = line(likePositiveState, '超級喜歡＋喜歡');
+      if (uh) uh.textContent = line(understandPositiveState, '全部聽懂＋大部分聽懂');
     }
 
     function sel(name, opts, current) {
@@ -1728,8 +1994,10 @@
       if (!rs.length) { wrap.classList.remove('visible'); return; }
       wrap.classList.add('visible');
 
+      const hasNote = rs.some(r => r.likeNote);
       const head = `<tr><th>#</th><th>年級</th><th>喜歡程度</th><th>聽懂程度</th>`
-        + COMP_NAMES.map(n => `<th>${n.replace('力','')}</th>`).join('') + `</tr>`;
+        + COMP_NAMES.map(n => `<th>${n.replace('力','')}</th>`).join('')
+        + (hasNote ? `<th>溫度計判讀依據</th>` : '') + `</tr>`;
       const rows = rs.map((r, i) => {
         const comps = r.competencies || {};
         return `<tr data-row="${i}">`
@@ -1738,6 +2006,7 @@
           + `<td>${sel('like', LIKE_OPTS, r.like || '未作答')}</td>`
           + `<td>${sel('understand', UNDERSTAND_OPTS, r.understand || '未作答')}</td>`
           + COMP_NAMES.map(n => `<td>${sel('c:' + n, COMP_OPTS, comps[n] || '未作答')}</td>`).join('')
+          + (hasNote ? `<td class="note">${escapeHtml(r.likeNote || '')}</td>` : '')
           + `</tr>`;
       }).join('');
       document.getElementById('sheetTable').innerHTML = head + rows;
@@ -1770,24 +2039,33 @@
         });
       });
 
-      const l = avgOf(like, LIKE_MAP), u = avgOf(understand, UNDERSTAND_MAP);
+      const l = avgOf(like, LIKE_MAP, LIKE_TOP2), u = avgOf(understand, UNDERSTAND_MAP, UNDERSTAND_TOP2);
       likeInput.value = l.score != null ? l.score : '';
       understandInput.value = u.score != null ? u.score : '';
       likeScaleState = 4; understandScaleState = 4;
+      likePositiveState = l.positive; understandPositiveState = u.positive;
+      updateScoreHints();
 
       // 就地更新各亮能的統計（保留勾選狀態與已編輯的說明文字）
       document.querySelectorAll('#compList .comp-item').forEach(item => {
         const name = item.dataset.name;
         const counts = comp[name] || {};
-        const { score, n } = avgOf(counts, COMP_MAP);
+        const { score, n, positive } = avgOf(counts, COMP_MAP, COMP_TOP2);
         const excluded = Number(counts['我不確定']) || 0;
-        if (score != null) { item.dataset.avg = score; item.dataset.n = n; item.dataset.excluded = excluded; }
-        else { delete item.dataset.avg; delete item.dataset.n; delete item.dataset.excluded; }
+        if (score != null) {
+          item.dataset.avg = score; item.dataset.n = n;
+          item.dataset.excluded = excluded;
+          if (positive != null) item.dataset.positive = positive; else delete item.dataset.positive;
+        } else {
+          delete item.dataset.avg; delete item.dataset.n;
+          delete item.dataset.excluded; delete item.dataset.positive;
+        }
         const statEl = item.querySelector('.comp-stat');
         const distEl = item.querySelector('.comp-dist');
         if (statEl) {
           statEl.textContent = score != null
-            ? `平均 ${score} / 4 ・ 有效樣本 ${n} 人${excluded ? `（排除「我不確定」${excluded} 人）` : ''}`
+            ? `平均 ${score} / 4 分${positive != null ? ` ・ 正向 ${positive}%` : ''}`
+              + ` ・ 有效樣本 ${n} 人${excluded ? `（排除「我不確定」${excluded} 人）` : ''}`
             : '（無有效樣本）';
         }
         if (distEl) {
@@ -1801,11 +2079,12 @@
 
     function updateCountNote(total, like, understand) {
       const noteEl = document.getElementById('countNote');
+      const pct = (v) => (v != null ? `　→ 正向比例 ${v}%` : '');
       const parts = [`本次共判讀 ${total} 份學習單`];
       parts.push('喜歡程度：' + ['超級喜歡','喜歡','還好','不太喜歡']
-        .map(k => `${k} ${Number(like[k]) || 0}`).join('・'));
+        .map(k => `${k} ${Number(like[k]) || 0}`).join('・') + pct(likePositiveState));
       parts.push('聽懂程度：' + ['全部聽懂','大部分聽懂','聽懂一點點','幾乎沒聽懂']
-        .map(k => `${k} ${Number(understand[k]) || 0}`).join('・'));
+        .map(k => `${k} ${Number(understand[k]) || 0}`).join('・') + pct(understandPositiveState));
       noteEl.innerHTML = parts.join('<br>');
       noteEl.classList.add('visible');
       noteEl.classList.remove('over');
@@ -1838,6 +2117,7 @@
         row.dataset.name = c.name;
         if (c.avg != null) row.dataset.avg = c.avg;
         if (c.n != null) row.dataset.n = c.n;
+        if (c.positive != null) row.dataset.positive = c.positive;
         if (c.excluded != null) row.dataset.excluded = c.excluded;
         let statHtml = '';
         if (c.avg != null && c.n != null) {
@@ -1845,7 +2125,9 @@
             ? ['很像我','有點像我','不太像我','很不像我','我不確定']
                 .map(k => `${k} ${Number(c.counts[k]) || 0}`).join('・')
             : '';
-          statHtml = `<span class="comp-stat">平均 ${c.avg} / 4 ・ 有效樣本 ${c.n} 人`
+          statHtml = `<span class="comp-stat">平均 ${c.avg} / 4 分`
+            + `${c.positive != null ? ` ・ 正向 ${c.positive}%` : ''}`
+            + ` ・ 有效樣本 ${c.n} 人`
             + `${c.excluded ? `（排除「我不確定」${c.excluded} 人）` : ''}`
             + `${c.mismatch ? '<span class="warn"> ⚠️ 人數與總份數不符，建議人工核對</span>' : ''}</span>`
             + (dist ? `<br><span class="comp-dist">${dist}</span>` : '')
