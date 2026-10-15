@@ -212,6 +212,35 @@
     .count-note.over { background: #fef6ec; border-color: #f0c38e; color: #9a5b16; }
     .count-note .warn { color: #c17d2a; font-weight: 600; }
 
+    /* 逐份判讀結果（可編輯） */
+    .sheet-review { display: none; margin: -8px 0 20px; }
+    .sheet-review.visible { display: block; }
+    .sheet-toggle {
+      width: 100%; text-align: left; cursor: pointer;
+      background: #f6f6f2; border: 1px solid #e8e8e0; border-radius: 10px;
+      padding: 9px 14px; font-size: 0.82rem; font-weight: 600; color: #555;
+    }
+    .sheet-toggle:hover { background: #f0f0ea; }
+    .sheet-toggle .arrow { display: inline-block; transition: transform 0.15s; }
+    .sheet-toggle.open .arrow { transform: rotate(90deg); }
+    .sheet-body { display: none; padding: 12px 0 0; }
+    .sheet-body.open { display: block; }
+    .sheet-hint { font-size: 0.78rem; color: #888; margin-bottom: 8px; }
+    .sheet-scroll { overflow-x: auto; border: 1px solid #e8e8e0; border-radius: 10px; }
+    .sheet-table { border-collapse: collapse; width: 100%; font-size: 0.76rem; }
+    .sheet-table th, .sheet-table td {
+      border-bottom: 1px solid #eee; padding: 6px 8px; text-align: left; white-space: nowrap;
+    }
+    .sheet-table th { background: #f8f8f5; color: #555; font-weight: 600; position: sticky; top: 0; }
+    .sheet-table tr:last-child td { border-bottom: none; }
+    .sheet-table select {
+      font-size: 0.76rem; padding: 3px 5px; border: 1px solid #ddd;
+      border-radius: 5px; background: #fff; color: #333; cursor: pointer;
+    }
+    .sheet-table select:focus { outline: none; border-color: #6ab04c; }
+    .sheet-table select.edited { border-color: #6ab04c; background: #f2f9ee; font-weight: 600; }
+    .sheet-table .idx { color: #999; }
+
     .img-preview-wrap {
       display: none; margin-top: 12px;
       border-radius: 10px; overflow: hidden; max-height: 200px;
@@ -606,6 +635,17 @@
           </div>
         </div>
         <div class="count-note" id="countNote"></div>
+
+        <!-- 逐份判讀結果：可核對、可修正，改動會即時重算統計 -->
+        <div class="sheet-review" id="sheetReview">
+          <button type="button" class="sheet-toggle" id="sheetToggle">
+            <span class="arrow">▸</span> 逐份判讀結果（可核對與修正）
+          </button>
+          <div class="sheet-body" id="sheetBody">
+            <div class="sheet-hint">若發現 AI 判讀有誤，直接在這裡改，上方分數與亮能統計會立即重新計算。</div>
+            <div class="sheet-scroll"><table class="sheet-table" id="sheetTable"></table></div>
+          </div>
+        </div>
 
         <!-- Section 2: Competencies -->
         <div class="section-label">
@@ -1157,6 +1197,9 @@
       drivePreview.classList.remove('visible', 'over');
       Object.keys(sizeCache).forEach(k => delete sizeCache[k]);
       document.getElementById('illusSection').style.display = 'none';
+      document.getElementById('sheetReview').classList.remove('visible');
+      document.getElementById('sheetTable').innerHTML = '';
+      document.getElementById('countNote').classList.remove('visible', 'over');
       [yearInput, termInput, countyInput, schoolInput, courseInput, instructorInput, audienceInput, likeInput, understandInput]
         .forEach(el => { el.value = ''; el.classList.remove('invalid'); });
       analysis = null;
@@ -1617,6 +1660,7 @@
       renderCheckList(schoolListEl, analysis.school);
       renderCheckList(instructorListEl, analysis.instructor);
       renderCompetencies(analysis.competencies);
+      renderSheetReview();
 
       results.classList.add('visible');
     }
@@ -1651,6 +1695,135 @@
         container.appendChild(row);
       });
     }
+
+    // ── 逐份判讀結果：顯示、編輯、即時重算 ──────────────
+    const LIKE_MAP = { '超級喜歡': 4, '喜歡': 3, '還好': 2, '不太喜歡': 1 };
+    const UNDERSTAND_MAP = { '全部聽懂': 4, '大部分聽懂': 3, '聽懂一點點': 2, '幾乎沒聽懂': 1 };
+    const COMP_MAP = { '很像我': 4, '有點像我': 3, '不太像我': 2, '很不像我': 1 };
+    const COMP_NAMES = ['覺察力', '表達力', '驅動力', '合作力', '探索力', '實踐力'];
+    const LIKE_OPTS = ['超級喜歡', '喜歡', '還好', '不太喜歡', '未作答'];
+    const UNDERSTAND_OPTS = ['全部聽懂', '大部分聽懂', '聽懂一點點', '幾乎沒聽懂', '未作答'];
+    const COMP_OPTS = [['很像我','很像'], ['有點像我','有點像'], ['不太像我','不太像'], ['很不像我','很不像'], ['我不確定','不確定'], ['未作答','未答']];
+
+    function avgOf(counts, map) {
+      let sum = 0, n = 0;
+      Object.entries(map).forEach(([opt, val]) => {
+        const c = Number(counts[opt]) || 0;
+        sum += val * c; n += c;
+      });
+      return { score: n ? Math.round((sum / n) * 10) / 10 : null, n };
+    }
+
+    function sel(name, opts, current) {
+      const o = opts.map(x => {
+        const [val, label] = Array.isArray(x) ? x : [x, x];
+        return `<option value="${val}"${val === current ? ' selected' : ''}>${label}</option>`;
+      }).join('');
+      return `<select data-field="${name}">${o}</select>`;
+    }
+
+    function renderSheetReview() {
+      const rs = (analysis && analysis.responses) || [];
+      const wrap = document.getElementById('sheetReview');
+      if (!rs.length) { wrap.classList.remove('visible'); return; }
+      wrap.classList.add('visible');
+
+      const head = `<tr><th>#</th><th>年級</th><th>喜歡程度</th><th>聽懂程度</th>`
+        + COMP_NAMES.map(n => `<th>${n.replace('力','')}</th>`).join('') + `</tr>`;
+      const rows = rs.map((r, i) => {
+        const comps = r.competencies || {};
+        return `<tr data-row="${i}">`
+          + `<td class="idx">${i + 1}</td>`
+          + `<td>${escapeHtml(r.grade || '—')}</td>`
+          + `<td>${sel('like', LIKE_OPTS, r.like || '未作答')}</td>`
+          + `<td>${sel('understand', UNDERSTAND_OPTS, r.understand || '未作答')}</td>`
+          + COMP_NAMES.map(n => `<td>${sel('c:' + n, COMP_OPTS, comps[n] || '未作答')}</td>`).join('')
+          + `</tr>`;
+      }).join('');
+      document.getElementById('sheetTable').innerHTML = head + rows;
+    }
+
+    // 從表格讀回目前（可能已被修正的）逐份資料
+    function readSheetReview() {
+      return Array.from(document.querySelectorAll('#sheetTable tr[data-row]')).map(tr => {
+        const get = (f) => {
+          const el = tr.querySelector(`select[data-field="${f}"]`);
+          return el ? el.value : '';
+        };
+        const competencies = {};
+        COMP_NAMES.forEach(n => { competencies[n] = get('c:' + n); });
+        return { like: get('like'), understand: get('understand'), competencies };
+      });
+    }
+
+    // 任一欄位被修改 → 立即重算所有統計
+    function recomputeFromResponses() {
+      const rs = readSheetReview();
+      if (!rs.length) return;
+
+      const like = {}, understand = {}, comp = {};
+      const bump = (o, k) => { if (k) o[k] = (o[k] || 0) + 1; };
+      rs.forEach(r => {
+        bump(like, r.like); bump(understand, r.understand);
+        Object.entries(r.competencies).forEach(([n, v]) => {
+          comp[n] = comp[n] || {}; bump(comp[n], v);
+        });
+      });
+
+      const l = avgOf(like, LIKE_MAP), u = avgOf(understand, UNDERSTAND_MAP);
+      likeInput.value = l.score != null ? l.score : '';
+      understandInput.value = u.score != null ? u.score : '';
+      likeScaleState = 4; understandScaleState = 4;
+
+      // 就地更新各亮能的統計（保留勾選狀態與已編輯的說明文字）
+      document.querySelectorAll('#compList .comp-item').forEach(item => {
+        const name = item.dataset.name;
+        const counts = comp[name] || {};
+        const { score, n } = avgOf(counts, COMP_MAP);
+        const excluded = Number(counts['我不確定']) || 0;
+        if (score != null) { item.dataset.avg = score; item.dataset.n = n; item.dataset.excluded = excluded; }
+        else { delete item.dataset.avg; delete item.dataset.n; delete item.dataset.excluded; }
+        const statEl = item.querySelector('.comp-stat');
+        const distEl = item.querySelector('.comp-dist');
+        if (statEl) {
+          statEl.textContent = score != null
+            ? `平均 ${score} / 4 ・ 有效樣本 ${n} 人${excluded ? `（排除「我不確定」${excluded} 人）` : ''}`
+            : '（無有效樣本）';
+        }
+        if (distEl) {
+          distEl.textContent = ['很像我','有點像我','不太像我','很不像我','我不確定']
+            .map(k => `${k} ${Number(counts[k]) || 0}`).join('・');
+        }
+      });
+
+      updateCountNote(rs.length, like, understand);
+    }
+
+    function updateCountNote(total, like, understand) {
+      const noteEl = document.getElementById('countNote');
+      const parts = [`本次共判讀 ${total} 份學習單`];
+      parts.push('喜歡程度：' + ['超級喜歡','喜歡','還好','不太喜歡']
+        .map(k => `${k} ${Number(like[k]) || 0}`).join('・'));
+      parts.push('聽懂程度：' + ['全部聽懂','大部分聽懂','聽懂一點點','幾乎沒聽懂']
+        .map(k => `${k} ${Number(understand[k]) || 0}`).join('・'));
+      noteEl.innerHTML = parts.join('<br>');
+      noteEl.classList.add('visible');
+      noteEl.classList.remove('over');
+    }
+
+    document.getElementById('sheetToggle').addEventListener('click', () => {
+      const btn = document.getElementById('sheetToggle');
+      const body = document.getElementById('sheetBody');
+      btn.classList.toggle('open');
+      body.classList.toggle('open');
+    });
+
+    document.getElementById('sheetTable').addEventListener('change', (e) => {
+      if (e.target.tagName === 'SELECT') {
+        e.target.classList.add('edited');
+        recomputeFromResponses();
+      }
+    });
 
     function renderCompetencies(comps) {
       compListEl.innerHTML = '';
