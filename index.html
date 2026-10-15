@@ -828,6 +828,11 @@
     // 因此直接以這個尺寸為目標渲染：一次到位、不浪費頻寬、也不損失任何判讀資訊
     const TARGET_LONG_EDGE = 1568;
     const PAGE_JPEG_QUALITY = 0.82;
+    // 心情溫度計在學習單首頁的相對位置（已在 7 份真實掃描上驗證全部命中），
+    // 範圍刻意放寬，掃描稍有偏移也還涵蓋得到；整頁仍照常送出，放大圖只是輔助
+    const THERMO_CROP = [0.58, 0.24, 0.86, 0.46];
+    const ZOOM_MAX_EDGE = 950;    // 放大圖長邊（約 3 倍線性解析度，已足夠分辨刻度）
+    const ZOOM_MAX_SCALE = 6;     // 避免低解析度來源被無意義地放大
     // 每批暫存上傳的大小上限（Netlify 同步 function 單次請求約 6MB，base64 會膨脹約 1.33 倍）
     const STAGE_CHUNK_BYTES = 2.6 * 1024 * 1024;
     // 整班總頁數上限（30 位 × 2 頁，再留一點餘裕）
@@ -955,7 +960,8 @@
           pages.forEach((p, pi) => {
             pageItems.push({
               fileIdx: fi + 1, fileName: it.name, srcPage: pi + 1,
-              dataUrl: p.dataUrl, bytes: p.bytes, sig: p.sig, isStart: false,
+              dataUrl: p.dataUrl, bytes: p.bytes, sig: p.sig, zoom: p.zoom || null,
+              isStart: false,
             });
           });
           it.pageCount = pages.length;
@@ -993,9 +999,39 @@
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await renderWithTimeout(page, viewport, ctx);
-        out.push(packPage(canvas));
+        const packed = packPage(canvas);
+        // 同一個 page 物件已解碼過，接著渲染局部放大圖成本低很多
+        packed.zoom = await renderRegion(page, base, THERMO_CROP);
+        out.push(packed);
       }
       return out;
+    }
+
+    // 以高解析度只渲染頁面上的某個區域（相對座標 [x0,y0,x1,y1]）。
+    // 溫度計在整頁縮圖中只有約 155×195 px，刻度幾乎分不出來；
+    // 單獨放大後可拿到約 5 倍的線性解析度，判讀刻度才有足夠資訊
+    async function renderRegion(page, base, rel) {
+      try {
+        const cw = (rel[2] - rel[0]) * base.width;
+        const ch = (rel[3] - rel[1]) * base.height;
+        const scale = Math.min(ZOOM_MAX_EDGE / Math.max(cw, ch), ZOOM_MAX_SCALE);
+        const viewport = page.getViewport({
+          scale,
+          offsetX: -rel[0] * base.width * scale,
+          offsetY: -rel[1] * base.height * scale,
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(cw * scale);
+        canvas.height = Math.round(ch * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await renderWithTimeout(page, viewport, ctx);
+        return canvas.toDataURL('image/jpeg', PAGE_JPEG_QUALITY).split(',')[1];
+      } catch (e) {
+        console.warn('放大圖渲染失敗（不影響分析）：', e);
+        return null;
+      }
     }
 
     async function renderImageToPage(file) {
@@ -1456,6 +1492,8 @@
                   file: p.fileIdx, fileName: p.fileName, srcPage: p.srcPage,
                   mime: 'image/jpeg',
                   data: p.dataUrl.split(',')[1],
+                  // 溫度計放大圖只在每份的首頁（題目所在頁）附上
+                  zoom: pi === 0 ? (p.zoom || null) : null,
                 });
               });
             });
@@ -1464,7 +1502,7 @@
             const chunks = [];
             let cur = [], curBytes = 0;
             for (const pg of payload) {
-              const size = pg.data.length;
+              const size = pg.data.length + (pg.zoom ? pg.zoom.length : 0);
               if (cur.length && curBytes + size > STAGE_CHUNK_BYTES) {
                 chunks.push(cur); cur = []; curBytes = 0;
               }
