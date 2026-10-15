@@ -985,6 +985,7 @@
     async function renderPdfToPages(file) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+      let firstSig = null;
       const out = [];
       const limit = Math.min(pdf.numPages, MAX_PAGES);
       for (let i = 1; i <= limit; i++) {
@@ -1000,8 +1001,16 @@
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await renderWithTimeout(page, viewport, ctx);
         const packed = packPage(canvas);
-        // 同一個 page 物件已解碼過，接著渲染局部放大圖成本低很多
-        packed.zoom = await renderRegion(page, base, THERMO_CROP);
+
+        // 放大圖只有「題目所在的首頁」用得到。此時還沒做切分，但首頁彼此版型相同，
+        // 因此拿本檔第一頁當參考：版型不像的（自由繪圖的續頁）就不浪費時間渲染。
+        // 若參考頁本身不是首頁，頂多是少了放大圖，後端會自動退回整頁判讀
+        const looksLikeFront = i === 1 || similarity(packed.sig, firstSig) >= SPLIT_ABS_FLOOR;
+        if (i === 1) firstSig = packed.sig;
+        if (looksLikeFront) {
+          // 同一個 page 物件已解碼過，接著渲染局部放大圖成本低很多
+          packed.zoom = await renderRegion(page, base, THERMO_CROP);
+        }
         out.push(packed);
       }
       return out;
