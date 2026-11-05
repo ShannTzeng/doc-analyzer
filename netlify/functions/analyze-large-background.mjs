@@ -26,7 +26,7 @@ const COMPETENCY_DEFS = `- 覺察力：敏銳感受自我與環境變化（自�
    逐份判讀用的提示。每次呼叫只看「一份」學習單，
    內容固定不變，因此放在 system 並開啟 prompt caching。
    ────────────────────────────────────────────────────────── */
-const SHEET_PROMPT = `你是教育課程分析專家，正在判讀「一份」學生學習單的掃描影像。
+const SHEET_PROMPT_XINCHUANGLI = `你是教育課程分析專家，正在判讀「一份」學生學習單的掃描影像。
 
 這次只會給你**一份**學習單（通常 2 頁）。請專心把這一份讀清楚，不要做任何跨份統計、不要臆測其他學生的情況。
 
@@ -146,6 +146,64 @@ ${COMPETENCY_DEFS}
 - illustration：若本份有值得放進報告的精彩繪圖或填答，填該頁頁碼（從 1 起算）；否則填 null。`;
 
 /* ──────────────────────────────────────────────────────────
+   舊版「超能力解鎖計畫」學習單的逐份判讀提示。
+   與心創力版的差別：喜歡／理解是「數字評分」而非塗色或圈選臉譜，
+   而且沒有每位學生的六大亮能自評（亮能改為課程層級，於合併階段產出）。
+   ────────────────────────────────────────────────────────── */
+const SHEET_PROMPT_SUPERPOWER = `你是教育課程分析專家，正在判讀「一份」學生回饋單／學習單的掃描影像（超能力解鎖計畫版本）。
+
+這次只會給你**一份**學習單。請專心把這一份讀清楚，不要做任何跨份統計、不要臆測其他學生的情況。
+
+學習單可能是「注音版」，國字旁邊會有注音符號（ㄅㄆㄇ）。請忽略注音、只讀國字與學生填答內容。
+
+══════════════════════════════════════
+★ 規則一：兩題評分
+══════════════════════════════════════
+這份回饋單上有兩題要學生打分數：
+1.「我喜歡這堂課嗎？」（或意思相同的題目）
+2.「課後我對這個主題的了解有幾分呢？」（或意思相同的題目）
+
+這兩題的作答方式**可能是圈選數字、打勾、塗格子、畫星星或在量尺上做記號**，版面不固定。
+請依實際看到的樣子判讀，並回報：
+- 分數本身（數字）
+- 這一題的**滿分**是多少（從印在紙上的選項範圍判斷，例如最大可選到 5 就填 5）
+
+⚠️ **務必先觀察再下結論。** 請先在 observation 欄用一句話描述你實際看到的作答記號
+（例如：「1 到 5 的數字中，5 被圈起來」、「五顆星塗滿四顆」），寫完觀察之後再填分數。
+
+若該題沒有作答或讀不出來，分數填 null，滿分仍盡量填（讀不到就填 null）。
+不要猜測分數。
+
+══════════════════════════════════════
+★ 規則二：去識別化與質性素材
+══════════════════════════════════════
+- 去識別化：若出現學生姓名，務必處理成「王○○」這種形式，切勿呈現完整姓名。
+- 學生的開放式填答（手寫的感想、最喜歡的部分、想說的話等）是最重要的質性素材。
+  請**原話引用**（去識別化後），不要改寫成評語或總結。
+  讀不出來的字可用「□」代替，不要猜。
+
+══════════════════════════════════════
+只回覆下列 JSON，不要加任何其他文字：
+{
+  "grade": "三年級",
+  "like_observation": "1 到 5 的數字中，5 被圈起來",
+  "like_score": 5,
+  "like_max": 5,
+  "understand_observation": "1 到 5 的數字中，4 被圈起來",
+  "understand_score": 4,
+  "understand_max": 5,
+  "quotes": ["學生手寫原話（去識別化）"],
+  "highlights": ["這份學習單最值得注意的 1～3 件事"],
+  "illustration": {"page": 2, "reason": "畫了細緻的場景並標註說明"}
+}
+
+欄位規定：
+- grade：讀學習單上的年級，讀不到填 ""。
+- like_score / understand_score：數字；沒作答或讀不出來填 null。
+- like_max / understand_max：該題滿分；讀不出來填 null。
+- illustration：若本份有值得放進報告的精彩繪圖或填答，填該頁頁碼（從 1 起算）；否則填 null。`;
+
+/* ──────────────────────────────────────────────────────────
    合併用的提示（純文字，不含影像，因此成本極低）
    ────────────────────────────────────────────────────────── */
 const MERGE_PROMPT = `你是教育課程分析專家。下面是同一堂課中，每一位學生學習單的逐份判讀結果（已去識別化），以及系統算好的統計數字。
@@ -166,8 +224,8 @@ const MERGE_PROMPT = `你是教育課程分析專家。下面是同一堂課中�
 每一點的格式為 {"text": 重點內容, "sheet": 主要依據的份次}。
 sheet 填該重點主要來自第幾份學習單（從 1 起算）；若綜合多份而成，填 null。
 
-另外請為六大亮能各寫一句 evidence（綜合所有學生在該亮能的具體表現，可引用原話），
-name 一律使用完整名稱：覺察力、表達力、驅動力、合作力、探索力、實踐力。
+另外請處理六大亮能（name 一律使用完整名稱：覺察力、表達力、驅動力、合作力、探索力、實踐力）：
+{{COMPETENCY_TASK}}
 
 六大亮能定義：
 ${COMPETENCY_DEFS}
@@ -176,6 +234,16 @@ ${COMPETENCY_DEFS}
 
 只回覆以下 JSON，不要加任何其他文字：
 {"audience":"一～六年級","foundation":[{"text":"...","sheet":1}],"school":[{"text":"...","sheet":null}],"instructor":[{"text":"...","sheet":3}],"competencies":[{"name":"覺察力","evidence":"..."}]}`;
+
+// 心創力版：六個亮能都有學生自評統計，所以六個都要寫說明
+const COMPETENCY_TASK_XINCHUANGLI =
+  `六個亮能全部都要列出，每個寫一句 evidence（綜合所有學生在該亮能的具體表現，可引用原話）。`;
+
+// 超能力解鎖版：沒有學生自評，改由課程內容判斷「有沒有達成」，只列有達成的
+const COMPETENCY_TASK_SUPERPOWER =
+  `這個版本的回饋單沒有學生自評題，請改由課程內容與學生填答判斷本課程**達成了哪幾項亮能**，\n`
+  + `**只列出有達成的**（沒達成的不要列），每項寫一句 evidence 說明本課程如何展現該亮能。\n\n`
+  + `六大亮能定義：\n${COMPETENCY_DEFS}`;
 
 /* ──────────────────────────────────────────────────────────
    舊版單次呼叫提示（Google 雲端連結 / Word 仍走這條路）
@@ -261,6 +329,50 @@ ${COMPETENCY_DEFS}
 只回覆以下 JSON，不要加任何其他文字（responses 必須每份學習單一筆）：
 {"responses": [{"file":1,"grade":"三年級","like":"超級喜歡","understand":"大部分聽懂","competencies":{"覺察力":"很像我","表達力":"有點像我","驅動力":"很像我","合作力":"我不確定","探索力":"很像我","實踐力":"有點像我"}}], "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
 
+/* ──────────────────────────────────────────────────────────
+   舊版「超能力解鎖計畫」的單次合併提示。
+   Google 雲端連結與 Word 檔仍走單次合併，沿用當年的版本以維持相容。
+   ────────────────────────────────────────────────────────── */
+const ANALYSIS_PROMPT_SUPERPOWER = `你是教育課程分析專家。請仔細分析這份文件（可能包含學生回饋單、學習單、繪圖、課程記錄等），完成下列任務，並以指定 JSON 格式（繁體中文）回覆。
+
+共同規則：
+- 條列重點要簡潔、具體、有實質意義，每組最多 8 點，不用湊數。
+- 去識別化：若出現學生姓名，務必去識別化，例如「王小明」顯示為「王○○」或以「學生A」代稱，切勿呈現完整姓名。
+
+【任務 1：回饋分數】
+- 找出回饋單中「我喜歡這堂課嗎？」這類題目的所有學生評分，計算平均填入 likeScore，並指出滿分 likeScale（例如 5）。
+- 找出「課後我對這個主題的了解有幾分呢？」這類題目的評分，計算平均填入 understandScore，滿分填 understandScale。
+- 若文件中找不到對應題目，對應的分數欄位填 null。
+
+【任務 2：三個對象的條列重點】
+針對下列三個對象分別整理條列重點。每一點都是一個物件 {"text": 重點內容, "page": 頁碼, "file": 第幾份檔案}：
+- text：重點內容（簡潔、去識別化）。
+- page：該重點主要依據的頁碼（純數字，該檔案中的頁數）。若無法對應特定頁碼，填 null。
+- file：該重點來自第幾份檔案（從 1 起算）。文件可能有多份（標記為【第N份檔案】），請正確標出；只有一份檔案時一律填 1。
+對象說明：
+- foundation（給基金會）：全面評估本課程的執行成效，涵蓋課程設計、學生參與度、學習成果、亮點與可改進處。
+- school（給學校）：聚焦學生在這堂課的成長與改變。
+- instructor（給講師）：呈現學生在課堂上的收穫、以及對講師課程設計與執行的影響。若有負面回饋（如覺得無聊、無趣），只擷取「有建設性、可供改進」的內容（例如希望課程如何調整），不要單純抱怨。
+
+【任務 3：六大亮能達成評估（competencies）】
+判斷本課程達成了下列哪幾項亮能，只列出「有達成」的。name 必須完全使用這六個名稱之一：覺察力、表達力、驅動力、合作力、探索力、實踐力。每項附一句 evidence 說明本課程如何展現該亮能。
+六大亮能定義：
+- 覺察力：敏銳感受自我與環境變化（自我覺知、環境意識、美感素養）
+- 表達力：將內在想法、情緒或創意轉化為溝通、創作或行動（符號運用與溝通表達、透過創作表達）
+- 驅動力：建立穩定的內在支持，由內而外推動學習的內在動機
+- 合作力：理解他人、建立關係，合作共學共創（人際關係與團隊合作、多元文化理解）
+- 探索力：對未知保持好奇，主動發現選項、勇於提問與嘗試（系統思考解決問題、創新應變）
+- 實踐力：將所學付諸實踐，轉化為生活中真實的行動與選擇（規劃執行、道德實踐與公民意識）
+
+【任務 4：代表性插圖】
+找出學生繪圖或填答最精彩、最具代表性的頁面，每項為 {"file": 第幾份檔案, "page": 該檔案中的頁碼}（兩者皆從 1 起算），最多 3 項。文件可能有多份（標記為【第N份檔案】），請正確標出 file。只有一份檔案時 file 一律填 1。若無插圖或無法判斷，回傳空陣列。
+
+【任務 5：課程對象】
+從回饋單或文件內容判斷這堂課的參與年級／對象，例如「一～六年級」「三、四年級」「五年級」。填入 audience（字串）。若無法判斷，填空字串 ""。
+
+只回覆以下 JSON，不要加任何其他文字：
+{"likeScore": 數字或null, "likeScale": 數字, "understandScore": 數字或null, "understandScale": 數字, "audience": "一～六年級", "foundation": [{"text":"...","page":3,"file":1}], "school": [{"text":"...","page":null,"file":1}], "instructor": [{"text":"...","page":5,"file":2}], "competencies": [{"name":"覺察力","evidence":"..."}], "illustrations": [{"file":1,"page":5}]}`;
+
 /* ──────────────── 統計工具（一律由程式計算） ──────────────── */
 
 const toCount = (v) => {
@@ -312,6 +424,45 @@ function normalizeCompetencyName(raw) {
   return null;
 }
 
+// 舊版（超能力解鎖）：每份是數字評分，直接平均。滿分取各份回報中最常見的值
+function numericStats(responses, field) {
+  const vals = [], maxes = [];
+  responses.forEach((r) => {
+    const v = r[field + 'Score'];
+    const m = r[field + 'Max'];
+    if (typeof v === 'number' && isFinite(v)) vals.push(v);
+    if (typeof m === 'number' && isFinite(m) && m > 0) maxes.push(m);
+  });
+  let scale = null;
+  if (maxes.length) {
+    const tally = {};
+    maxes.forEach((m) => { tally[m] = (tally[m] || 0) + 1; });
+    scale = Number(Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0]);
+  }
+  return {
+    score: vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null,
+    n: vals.length,
+    scale,
+  };
+}
+
+// 舊版的逐份紀錄：數字評分，欄位正規化
+function cleanNumericResponses(arr) {
+  if (!Array.isArray(arr)) return [];
+  const str = (v) => (typeof v === 'string' ? v.trim() : '');
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  return arr.map((r, i) => ({
+    file: Number.isInteger(r && r.file) && r.file > 0 ? r.file : i + 1,
+    grade: str(r && r.grade),
+    likeScore: num(r && (r.likeScore !== undefined ? r.likeScore : r.like_score)),
+    likeMax: num(r && (r.likeMax !== undefined ? r.likeMax : r.like_max)),
+    likeNote: str(r && (r.likeNote || r.like_observation)),
+    understandScore: num(r && (r.understandScore !== undefined ? r.understandScore : r.understand_score)),
+    understandMax: num(r && (r.understandMax !== undefined ? r.understandMax : r.understand_max)),
+    understandNote: str(r && (r.understandNote || r.understand_observation)),
+  }));
+}
+
 // 整理「逐份紀錄」：每份學習單一筆，欄位正規化
 function cleanResponses(arr) {
   if (!Array.isArray(arr)) return [];
@@ -351,7 +502,7 @@ function tallyResponses(responses) {
   return { like, understand, comp };
 }
 
-function normalizeResult(parsed) {
+function normalizeResult(parsed, version) {
   const num = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v * 10) / 10 : null);
   const pageRe = /[（(][^（()）]*(?:頁|页|page|p\.?)[^（()）]*\d[^（()）]*[)）]\s*$/i;
   const cleanItems = (arr) => (Array.isArray(arr) ? arr.map((it) => {
@@ -373,6 +524,35 @@ function normalizeResult(parsed) {
     }
     return { text, page, file };
   }).filter((x) => x && x.text) : []);
+
+  // 舊版（超能力解鎖）：數字評分，平均一樣由程式算，亮能則是課程層級、沒有統計
+  if (version === 'superpower') {
+    const responses = cleanNumericResponses(parsed.responses);
+    const like = numericStats(responses, 'like');
+    const understand = numericStats(responses, 'understand');
+    const competencies = Array.isArray(parsed.competencies)
+      ? parsed.competencies
+          .map((c) => ({
+            name: normalizeCompetencyName(c && c.name),
+            evidence: c && typeof c.evidence === 'string' ? c.evidence.trim() : '',
+          }))
+          .filter((c) => c.name)
+      : [];
+    return {
+      version,
+      responses,
+      studentCount: responses.length || null,
+      likeScore: like.score, likeScale: like.scale, likeCounts: null, likePositive: null, likeMismatch: false,
+      understandScore: understand.score, understandScale: understand.scale,
+      understandCounts: null, understandPositive: null, understandMismatch: false,
+      audience: typeof parsed.audience === 'string' ? parsed.audience.trim() : '',
+      foundation: cleanItems(parsed.foundation),
+      school: cleanItems(parsed.school),
+      instructor: cleanItems(parsed.instructor),
+      competencies,
+      illustrations: normalizeIllustrations(parsed),
+    };
+  }
 
   // 逐份紀錄是統計的唯一依據；舊格式（模型自報 counts）仍保留為後備
   const responses = cleanResponses(parsed.responses);
@@ -438,6 +618,7 @@ function normalizeResult(parsed) {
   const understandCounted = totalCounted(understandSrc, UNDERSTAND_MAP, ['未作答']);
 
   return {
+    version: version || 'xinchuangli',
     responses,
     studentCount,
     likeScore: likeStats.score != null ? likeStats.score : num(parsed.likeScore),
@@ -571,7 +752,7 @@ async function loadStagedSheets(jobId, chunks) {
   });
 }
 
-async function readOneSheet(apiKey, sheet, index) {
+async function readOneSheet(apiKey, sheet, index, version) {
   const content = [];
   sheet.pages.forEach((p, i) => {
     content.push({ type: 'text', text: `【第 ${i + 1} 頁】` });
@@ -582,8 +763,9 @@ async function readOneSheet(apiKey, sheet, index) {
   });
 
   // 溫度計在整頁裡只佔約 1.7% 面積，縮圖後刻度幾乎分辨不出來。
-  // 因此另外附一張只有溫度計的高解析度放大圖，讓它在同一張圖裡獨佔注意力
-  const zoom = sheet.pages.find((p) => p.zoom);
+  // 因此另外附一張只有溫度計的高解析度放大圖，讓它在同一張圖裡獨佔注意力。
+  // （只有心創力版有溫度計，舊版的版面不同，放大圖沒有意義）
+  const zoom = version === 'superpower' ? null : sheet.pages.find((p) => p.zoom);
   if (zoom) {
     content.push({
       type: 'text',
@@ -599,10 +781,12 @@ async function readOneSheet(apiKey, sheet, index) {
 
   content.push({ type: 'text', text: `以上是第 ${index + 1} 份學習單的全部內容，請依規則判讀並只回覆 JSON。` });
 
+  const system = version === 'superpower' ? SHEET_PROMPT_SUPERPOWER : SHEET_PROMPT_XINCHUANGLI;
+
   // 單份失敗時重試一次，仍失敗則回傳空白紀錄，讓份數與統計維持對齊
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const data = await callClaude(apiKey, { system: SHEET_PROMPT, content, maxTokens: 3072 });
+      const data = await callClaude(apiKey, { system, content, maxTokens: 3072 });
       return parseJsonReply(data);
     } catch (e) {
       console.error(`第 ${index + 1} 份判讀失敗（第 ${attempt + 1} 次）:`, e.message);
@@ -612,10 +796,10 @@ async function readOneSheet(apiKey, sheet, index) {
   }
 }
 
-async function analyzeSheets(apiKey, sheets, store, jobId) {
+async function analyzeSheets(apiKey, sheets, store, jobId, version) {
   let done = 0;
   const step = async (sheet, i) => {
-    const out = await readOneSheet(apiKey, sheet, i);
+    const out = await readOneSheet(apiKey, sheet, i, version);
     done += 1;
     try { await store.setJSON(jobId, { status: 'processing', done, total: sheets.length }); } catch (_) {}
     return out;
@@ -630,29 +814,48 @@ async function analyzeSheets(apiKey, sheets, store, jobId) {
   const reads = [first, ...rest];
 
   // 逐份紀錄（統計的唯一依據）
-  const responses = reads.map((r, i) => ({
-    file: sheets[i].file,
-    grade: (r && r.grade) || '',
-    like: (r && r.like) || '未作答',
-    like_observation: (r && r.like_observation) || '',
-    understand: (r && r.understand) || '未作答',
-    understand_observation: (r && r.understand_observation) || '',
-    competencies: (r && r.competencies) || {},
-  }));
+  const responses = reads.map((r, i) => (version === 'superpower'
+    ? {
+      file: sheets[i].file,
+      grade: (r && r.grade) || '',
+      like_score: r && typeof r.like_score === 'number' ? r.like_score : null,
+      like_max: r && typeof r.like_max === 'number' ? r.like_max : null,
+      like_observation: (r && r.like_observation) || '',
+      understand_score: r && typeof r.understand_score === 'number' ? r.understand_score : null,
+      understand_max: r && typeof r.understand_max === 'number' ? r.understand_max : null,
+      understand_observation: (r && r.understand_observation) || '',
+    }
+    : {
+      file: sheets[i].file,
+      grade: (r && r.grade) || '',
+      like: (r && r.like) || '未作答',
+      like_observation: (r && r.like_observation) || '',
+      understand: (r && r.understand) || '未作答',
+      understand_observation: (r && r.understand_observation) || '',
+      competencies: (r && r.competencies) || {},
+    }));
 
   const failed = reads.filter((r) => r && r.__failed).length;
 
   // 彙整質性素材，交給純文字的合併呼叫
-  const digest = reads.map((r, i) => ({
-    sheet: i + 1,
-    grade: (r && r.grade) || '',
-    like: (r && r.like) || '未作答',
-    understand: (r && r.understand) || '未作答',
-    competencies: (r && r.competencies) || {},
-    quotes: Array.isArray(r && r.quotes) ? r.quotes.filter((q) => typeof q === 'string' && q.trim()) : [],
-    comp_evidence: (r && r.comp_evidence) || {},
-    highlights: Array.isArray(r && r.highlights) ? r.highlights.filter((h) => typeof h === 'string' && h.trim()) : [],
-  }));
+  const digest = reads.map((r, i) => {
+    const base = {
+      sheet: i + 1,
+      grade: (r && r.grade) || '',
+      quotes: Array.isArray(r && r.quotes) ? r.quotes.filter((q) => typeof q === 'string' && q.trim()) : [],
+      highlights: Array.isArray(r && r.highlights) ? r.highlights.filter((h) => typeof h === 'string' && h.trim()) : [],
+    };
+    if (version === 'superpower') {
+      return { ...base, like: r && r.like_score, understand: r && r.understand_score };
+    }
+    return {
+      ...base,
+      like: (r && r.like) || '未作答',
+      understand: (r && r.understand) || '未作答',
+      competencies: (r && r.competencies) || {},
+      comp_evidence: (r && r.comp_evidence) || {},
+    };
+  });
 
   // 代表性插圖：各份自行推薦，最多取 3 張
   const illustrations = [];
@@ -670,14 +873,16 @@ async function analyzeSheets(apiKey, sheets, store, jobId) {
 }
 
 // 純文字的合併呼叫：不含任何影像，成本極低
-async function mergeSheets(apiKey, digest, stats) {
+async function mergeSheets(apiKey, digest, stats, version) {
   const payload = {
     統計: stats,
     逐份素材: digest,
   };
+  const task = version === 'superpower' ? COMPETENCY_TASK_SUPERPOWER : COMPETENCY_TASK_XINCHUANGLI;
+  const prompt = MERGE_PROMPT.replace('{{COMPETENCY_TASK}}', task);
   const content = [{
     type: 'text',
-    text: `${MERGE_PROMPT}\n\n以下是資料：\n${JSON.stringify(payload, null, 1)}`,
+    text: `${prompt}\n\n以下是資料：\n${JSON.stringify(payload, null, 1)}`,
   }];
   const data = await callClaude(apiKey, { content, maxTokens: 4096 });
   return parseJsonReply(data);
@@ -715,20 +920,21 @@ export default async (req) => {
         return new Response('ok');
       }
 
-      const { responses, digest, illustrations, failed } = await analyzeSheets(apiKey, sheets, store, jobId);
+      const version = body.version === 'superpower' ? 'superpower' : 'xinchuangli';
+      const { responses, digest, illustrations, failed } = await analyzeSheets(apiKey, sheets, store, jobId, version);
 
       // 先用程式算好統計，再把數字交給合併呼叫引用
-      const base = normalizeResult({ responses, competencies: [] });
+      const base = normalizeResult({ responses, competencies: [] }, version);
       const stats = {
         份數: base.studentCount,
-        喜歡程度: { 平均: base.likeScore, 滿分: 4, 正向比例: base.likePositive, 各選項人數: base.likeCounts },
-        聽懂程度: { 平均: base.understandScore, 滿分: 4, 正向比例: base.understandPositive, 各選項人數: base.understandCounts },
+        喜歡程度: { 平均: base.likeScore, 滿分: base.likeScale, 正向比例: base.likePositive, 各選項人數: base.likeCounts },
+        聽懂程度: { 平均: base.understandScore, 滿分: base.understandScale, 正向比例: base.understandPositive, 各選項人數: base.understandCounts },
         六大亮能: base.competencies.map((c) => ({ 名稱: c.name, 平均: c.avg, 有效樣本: c.n, 正向比例: c.positive })),
       };
 
       let merged = {};
       try {
-        merged = await mergeSheets(apiKey, digest, stats);
+        merged = await mergeSheets(apiKey, digest, stats, version);
       } catch (e) {
         console.error('合併分析失敗:', e.message);
       }
@@ -754,7 +960,7 @@ export default async (req) => {
         instructor: mapItems(merged.instructor),
         competencies: Array.isArray(merged.competencies) ? merged.competencies : [],
         illustrations,
-      });
+      }, version);
 
       await store.setJSON(jobId, {
         status: 'done',
@@ -770,6 +976,11 @@ export default async (req) => {
     }
 
     /* ── 舊路徑：Google 雲端連結 / Word / 單次合併分析 ── */
+
+    // 這條路徑是「一次把所有檔案丟給模型」，沿用各版本當年的合併提示。
+    // 注意：舊版提示回傳的是 likeScore/likeScale 等頂層欄位，不是逐份 responses，
+    // 因此 normalizeResult 不要帶 version（帶了會走逐份數字分支而讀不到資料）。
+    const mergedPrompt = body.version === 'superpower' ? ANALYSIS_PROMPT_SUPERPOWER : ANALYSIS_PROMPT;
 
     // 支援多份連結（driveUrls），並向後相容單一 driveUrl
     let driveUrls = Array.isArray(body.driveUrls) ? body.driveUrls : [];
@@ -831,7 +1042,7 @@ export default async (req) => {
           messageContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.fileData } });
         }
       }
-      messageContent.push({ type: 'text', text: ANALYSIS_PROMPT });
+      messageContent.push({ type: 'text', text: mergedPrompt });
     }
 
     // 雲端連結模式：逐一下載每份檔案，組成同一則 Claude 訊息（合併分析）
@@ -871,7 +1082,7 @@ export default async (req) => {
     }
 
     // 上傳模式已在上方附加指令，這裡只處理雲端連結模式
-    if (driveUrls.length) messageContent.push({ type: 'text', text: ANALYSIS_PROMPT });
+    if (driveUrls.length) messageContent.push({ type: 'text', text: mergedPrompt });
 
     const data = await callClaude(apiKey, { content: messageContent, maxTokens: 8192 });
     const parsed = parseJsonReply(data);

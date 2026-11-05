@@ -240,12 +240,40 @@
     .sheet-table select:focus { outline: none; border-color: #6ab04c; }
     .sheet-table select.edited { border-color: #6ab04c; background: #f2f9ee; font-weight: 600; }
     .sheet-table .idx { color: #999; }
+    .sheet-table .sheet-num {
+      width: 56px; font-size: 0.76rem; padding: 3px 5px;
+      border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #333;
+    }
+    .sheet-table .sheet-num:focus { outline: none; border-color: #6ab04c; }
+    .sheet-table .sheet-num.edited { border-color: #6ab04c; background: #f2f9ee; font-weight: 600; }
+    .sheet-table .of-max { color: #aaa; font-size: 0.72rem; }
     .sheet-table .note {
       white-space: normal; min-width: 210px; max-width: 320px;
       font-size: 0.72rem; color: #888; line-height: 1.45;
     }
 
     .score-hint { font-size: 0.72rem; color: #6ab04c; margin-top: 4px; min-height: 1em; }
+
+    /* ── 學習單版本選擇 ── */
+    .version-label {
+      font-size: 0.74rem; font-weight: 700; color: #888;
+      letter-spacing: 1px; margin-bottom: 7px;
+    }
+    .version-pick { display: flex; gap: 9px; margin-bottom: 18px; }
+    .ver-btn {
+      flex: 1; cursor: pointer; text-align: left;
+      padding: 10px 13px; border-radius: 11px;
+      border: 1.5px solid #e4e4dc; background: #fcfcfa;
+      transition: border-color 0.15s, background 0.15s;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .ver-btn:hover { border-color: #b9d3a8; }
+    .ver-btn .v-name { font-size: 0.86rem; font-weight: 700; color: #555; }
+    .ver-btn .v-desc { font-size: 0.7rem; color: #999; line-height: 1.35; }
+    .ver-btn.active { border-color: #6ab04c; background: #f2f9ee; }
+    .ver-btn.active .v-name { color: #2b4a25; }
+    .ver-btn.active .v-desc { color: #6a8a5c; }
+    @media (max-width: 520px) { .version-pick { flex-direction: column; } }
 
     /* 自動切分結果的縮圖條 */
     .split-review { display: none; margin: -8px 0 20px; }
@@ -542,6 +570,19 @@
     </div>
 
     <div class="card">
+
+      <!-- 學習單版本：兩種版本的題型與統計方式完全不同，必須先選 -->
+      <div class="version-label">學習單版本</div>
+      <div class="version-pick" id="versionPick">
+        <button type="button" class="ver-btn active" data-version="xinchuangli">
+          <span class="v-name">心創力計畫</span>
+          <span class="v-desc">目前版本・心情溫度計＋六大亮能自評</span>
+        </button>
+        <button type="button" class="ver-btn" data-version="superpower">
+          <span class="v-name">超能力解鎖計畫</span>
+          <span class="v-desc">舊版・兩題數字評分</span>
+        </button>
+      </div>
 
       <!-- Tabs -->
       <div class="tabs">
@@ -849,6 +890,8 @@
     let selectedFiles = [];   // [{file, ext, name, originalSize, pageCount, status}]
     let pageItems = [];       // [{fileIdx, fileName, srcPage, dataUrl, bytes, sig, isStart}]
     let activeTab = 'upload';
+    // 'xinchuangli' = 心創力（目前版本）、'superpower' = 超能力解鎖（舊版）
+    let sheetVersion = 'xinchuangli';
     let capturedImageBase64 = null;
     let reportImages = [];
     let analysis = null;          // 完整分析結果
@@ -885,6 +928,20 @@
     const foundationListEl = document.getElementById('foundationList');
     const schoolListEl = document.getElementById('schoolList');
     const instructorListEl = document.getElementById('instructorList');
+
+    // 學習單版本切換。兩版的題型與統計方式不同，換版本等於換一套分析，
+    // 因此一併清掉上一次的分析結果，避免新舊欄位混在同一張表上
+    document.querySelectorAll('.ver-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.version === sheetVersion) return;
+        sheetVersion = btn.dataset.version;
+        document.querySelectorAll('.ver-btn').forEach(b => b.classList.toggle('active', b === btn));
+        analysis = null;
+        hideResults(); hideError();
+        document.getElementById('countNote').classList.remove('visible', 'over');
+        document.getElementById('sheetReview').classList.remove('visible');
+      });
+    });
 
     // Tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1484,7 +1541,7 @@
             await fetch('/.netlify/functions/analyze-large-background', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ jobId, staged: true }),
+              body: JSON.stringify({ jobId, staged: true, version: sheetVersion }),
             });
             await new Promise(r => setTimeout(r, 3000));
             result = await pollJobResult(jobId, 420);
@@ -1502,7 +1559,7 @@
                   mime: 'image/jpeg',
                   data: p.dataUrl.split(',')[1],
                   // 溫度計放大圖只在每份的首頁（題目所在頁）附上
-                  zoom: pi === 0 ? (p.zoom || null) : null,
+                  zoom: (pi === 0 && sheetVersion === 'xinchuangli') ? (p.zoom || null) : null,
                 });
               });
             });
@@ -1530,7 +1587,7 @@
             await fetch('/.netlify/functions/analyze-large-background', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ jobId, staged: true, chunks: chunks.length, sheetCount: sheets.length }),
+              body: JSON.stringify({ jobId, staged: true, chunks: chunks.length, sheetCount: sheets.length, version: sheetVersion }),
             });
 
             await new Promise(r => setTimeout(r, 3000));
@@ -1562,7 +1619,7 @@
           await fetch('/.netlify/functions/analyze-large-background', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jobId, driveUrls: urls }),
+            body: JSON.stringify({ jobId, driveUrls: urls, version: sheetVersion }),
           });
 
           // 等待 5 秒後開始輪詢（多檔需更長時間）
@@ -2035,11 +2092,18 @@
       return `<select data-field="${name}">${o}</select>`;
     }
 
+    function resultVersion() {
+      return (analysis && analysis.version) || 'xinchuangli';
+    }
+
     function renderSheetReview() {
       const rs = (analysis && analysis.responses) || [];
       const wrap = document.getElementById('sheetReview');
       if (!rs.length) { wrap.classList.remove('visible'); return; }
       wrap.classList.add('visible');
+
+      // 舊版是數字評分、沒有逐生亮能自評，表格欄位完全不同
+      if (resultVersion() === 'superpower') return renderSheetReviewNumeric(rs);
 
       const hasNote = rs.some(r => r.likeNote);
       const head = `<tr><th>#</th><th>年級</th><th>喜歡程度</th><th>聽懂程度</th>`
@@ -2057,6 +2121,47 @@
           + `</tr>`;
       }).join('');
       document.getElementById('sheetTable').innerHTML = head + rows;
+    }
+
+    // 舊版（超能力解鎖）：數字評分，欄位用數字輸入框
+    function renderSheetReviewNumeric(rs) {
+      const hasNote = rs.some(r => r.likeNote || r.understandNote);
+      const numCell = (field, val, max) =>
+        `<input type="number" class="sheet-num" data-field="${field}" step="0.5" min="0"`
+        + `${max ? ` max="${max}"` : ''} value="${val != null ? val : ''}" placeholder="—">`
+        + `${max ? `<span class="of-max"> / ${max}</span>` : ''}`;
+
+      const head = `<tr><th>#</th><th>年級</th><th>喜歡評分</th><th>理解評分</th>`
+        + (hasNote ? `<th>判讀依據</th>` : '') + `</tr>`;
+      const rows = rs.map((r, i) =>
+        `<tr data-row="${i}">`
+        + `<td class="idx">${i + 1}</td>`
+        + `<td>${escapeHtml(r.grade || '—')}</td>`
+        + `<td>${numCell('likeScore', r.likeScore, r.likeMax)}</td>`
+        + `<td>${numCell('understandScore', r.understandScore, r.understandMax)}</td>`
+        + (hasNote ? `<td class="note">${escapeHtml([r.likeNote, r.understandNote].filter(Boolean).join('／'))}</td>` : '')
+        + `</tr>`).join('');
+      document.getElementById('sheetTable').innerHTML = head + rows;
+    }
+
+    // 舊版的即時重算：平均數字評分
+    function recomputeNumeric() {
+      const rows = Array.from(document.querySelectorAll('#sheetTable tr[data-row]'));
+      if (!rows.length) return;
+      const pick = (f) => rows
+        .map(tr => tr.querySelector(`input[data-field="${f}"]`))
+        .map(el => (el && el.value.trim() !== '' ? Number(el.value) : null))
+        .filter(v => v != null && isFinite(v));
+      const avg = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : '');
+      likeInput.value = avg(pick('likeScore'));
+      understandInput.value = avg(pick('understandScore'));
+      // 舊版是連續分數，沒有「選項人數」可清點，也就沒有正向比例
+      likePositiveState = null; understandPositiveState = null;
+      updateScoreHints();
+      const noteEl = document.getElementById('countNote');
+      noteEl.innerHTML = `本次共判讀 ${rows.length} 份學習單`;
+      noteEl.classList.add('visible');
+      noteEl.classList.remove('over');
     }
 
     // 從表格讀回目前（可能已被修正的）逐份資料
@@ -2144,10 +2249,11 @@
       body.classList.toggle('open');
     });
 
-    document.getElementById('sheetTable').addEventListener('change', (e) => {
-      if (e.target.tagName === 'SELECT') {
+    document.getElementById('sheetTable').addEventListener('input', (e) => {
+      if (e.target.tagName === 'SELECT' || e.target.classList.contains('sheet-num')) {
         e.target.classList.add('edited');
-        recomputeFromResponses();
+        if (resultVersion() === 'superpower') recomputeNumeric();
+        else recomputeFromResponses();
       }
     });
 
