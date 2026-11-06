@@ -240,13 +240,6 @@
     .sheet-table select:focus { outline: none; border-color: #6ab04c; }
     .sheet-table select.edited { border-color: #6ab04c; background: #f2f9ee; font-weight: 600; }
     .sheet-table .idx { color: #999; }
-    .sheet-table .sheet-num {
-      width: 56px; font-size: 0.76rem; padding: 3px 5px;
-      border: 1px solid #ddd; border-radius: 5px; background: #fff; color: #333;
-    }
-    .sheet-table .sheet-num:focus { outline: none; border-color: #6ab04c; }
-    .sheet-table .sheet-num.edited { border-color: #6ab04c; background: #f2f9ee; font-weight: 600; }
-    .sheet-table .of-max { color: #aaa; font-size: 0.72rem; }
     .sheet-table .note {
       white-space: normal; min-width: 210px; max-width: 320px;
       font-size: 0.72rem; color: #888; line-height: 1.45;
@@ -871,16 +864,24 @@
     const PAGE_JPEG_QUALITY = 0.82;
     // 心情溫度計在學習單首頁的相對位置（已在 7 份真實掃描上驗證全部命中），
     // 範圍刻意放寬，掃描稍有偏移也還涵蓋得到；整頁仍照常送出，放大圖只是輔助
-    const THERMO_CROP = [0.58, 0.24, 0.86, 0.46];
+    // 兩版的溫度計在頁面上的位置不同，各自驗證過可完整涵蓋
+    const THERMO_CROP_BY_VERSION = {
+      xinchuangli: [0.58, 0.24, 0.86, 0.46],
+      superpower:  [0.17, 0.36, 0.52, 0.62],
+    };
+    const thermoCrop = () => THERMO_CROP_BY_VERSION[sheetVersion] || THERMO_CROP_BY_VERSION.xinchuangli;
     const ZOOM_MAX_EDGE = 950;    // 放大圖長邊（約 3 倍線性解析度，已足夠分辨刻度）
     const ZOOM_MAX_SCALE = 6;     // 避免低解析度來源被無意義地放大
+    // 與本檔第一頁的相似度達此值才預先渲染放大圖（只有首頁用得到）。
+    // 寧可多渲染幾張也不要漏掉首頁，所以取得比切分門檻寬鬆
+    const ZOOM_FRONT_SIM = 0.78;
     // 每批暫存上傳的大小上限（Netlify 同步 function 單次請求約 6MB，base64 會膨脹約 1.33 倍）
     const STAGE_CHUNK_BYTES = 2.6 * 1024 * 1024;
     // 整班總頁數上限（30 位 × 2 頁，再留一點餘裕）
     const MAX_PAGES = 70;
-    // 切分判定門檻（見 detectSheetStarts）。實測首頁彼此 0.94～0.98、續頁最高 0.70
-    const SPLIT_ABS_FLOOR = 0.80;   // 絕對下限：低於此值不算版型吻合
-    const SPLIT_REL_BAND = 0.15;    // 與最高分的容許差距
+    // 切分判定（見 detectSheetStarts）：若「與第一頁最不像的那一頁」都還這麼像，
+    // 代表整批只有一種版型，也就是每頁各自一份
+    const SPLIT_ONE_CLUSTER = 0.85;
     const SIG_W = 48, SIG_H = 68;    // 版型指紋的取樣尺寸
     // 檔案合計大小上限（MB）。Claude 單次約 32MB，檔案轉 base64 會膨脹約 1.33 倍，故留安全空間
     const MAX_TOTAL_MB = 20;
@@ -899,6 +900,7 @@
     let understandScaleState = 5;
     let likePositiveState = null;         // 正向比例（%），由各選項人數算出
     let understandPositiveState = null;
+    let wantAgainState = null;   // 舊版「下次還想再聽」的想要比例（%）
 
     // Elements
     const dropZone    = document.getElementById('dropZone');
@@ -936,7 +938,7 @@
         if (btn.dataset.version === sheetVersion) return;
         sheetVersion = btn.dataset.version;
         document.querySelectorAll('.ver-btn').forEach(b => b.classList.toggle('active', b === btn));
-        analysis = null;
+        analysis = null; wantAgainState = null;
         hideResults(); hideError();
         document.getElementById('countNote').classList.remove('visible', 'over');
         document.getElementById('sheetReview').classList.remove('visible');
@@ -1062,11 +1064,11 @@
         // 放大圖只有「題目所在的首頁」用得到。此時還沒做切分，但首頁彼此版型相同，
         // 因此拿本檔第一頁當參考：版型不像的（自由繪圖的續頁）就不浪費時間渲染。
         // 若參考頁本身不是首頁，頂多是少了放大圖，後端會自動退回整頁判讀
-        const looksLikeFront = i === 1 || similarity(packed.sig, firstSig) >= SPLIT_ABS_FLOOR;
+        const looksLikeFront = i === 1 || similarity(packed.sig, firstSig) >= ZOOM_FRONT_SIM;
         if (i === 1) firstSig = packed.sig;
         if (looksLikeFront) {
           // 同一個 page 物件已解碼過，接著渲染局部放大圖成本低很多
-          packed.zoom = await renderRegion(page, base, THERMO_CROP);
+          packed.zoom = await renderRegion(page, base, thermoCrop());
         }
         out.push(packed);
       }
@@ -1171,39 +1173,37 @@
 
     // 判斷每一頁是不是「新的一份學習單的首頁」
     //
-    // 原理：學習單首頁的印刷版型每份都一樣，所以首頁彼此的相似度會明顯高於續頁
-    // （續頁是自由繪圖，彼此只有少量共通的印刷說明文字）。
-    // 不用固定門檻，而是找「排序後落差最大的那一刀」——因為相似度的絕對值會隨
-    // 掃描品質、紙張紋路而整批偏移，但高低兩群之間的落差一直都很明顯。
+    // 原理：同一版型的首頁彼此幾乎一模一樣，續頁則自成另一群。
+    // 不能只用「和其他頁的最高相似度」加門檻——舊版回饋單的續頁也印了標題、
+    // logo 與浮水印，續頁彼此相似度可達 0.77，會被誤判成首頁。
+    // 因此改成「兩個種子分群」：以第一頁為首頁種子，取與它最不像的那一頁當續頁種子，
+    // 每一頁歸給比較像的那一邊。這只看相對遠近，不依賴絕對門檻。
     function detectSheetStarts() {
-      if (!pageItems.length) return;
+      const n = pageItems.length;
+      if (!n) return;
       pageItems.forEach(p => { p.isStart = false; p.sim = 0; });
 
-      // 每一頁和「其他頁」的最高相似度
-      for (let i = 0; i < pageItems.length; i++) {
+      const sim = (i, j) => similarity(pageItems[i].sig, pageItems[j].sig);
+
+      // 每頁與其他頁的最高相似度，僅供介面顯示與診斷
+      for (let i = 0; i < n; i++) {
         let best = -1;
-        for (let j = 0; j < pageItems.length; j++) {
-          if (i === j) continue;
-          const s = similarity(pageItems[i].sig, pageItems[j].sig);
-          if (s > best) best = s;
-        }
+        for (let j = 0; j < n; j++) if (i !== j) { const v = sim(i, j); if (v > best) best = v; }
         pageItems[i].sim = best;
       }
 
-      // 門檻有兩個條件，取較嚴格者：
-      //   1. 絕對下限 —— 要夠像才算「版型吻合」。實測首頁 0.94～0.98、續頁最高 0.70
-      //   2. 相對於最高分 —— 最高分那頁必定是首頁，其餘首頁都會緊貼著它
-      // 不用「找最大落差」是因為續頁之間也可能有次大落差，兩者曾只差 0.003 就選錯邊
-      const maxSim = Math.max(...pageItems.map(p => p.sim));
-      const cut = Math.max(SPLIT_ABS_FLOOR, maxSim - SPLIT_REL_BAND);
-      pageItems.forEach(p => { p.simCut = cut; });
-      pageItems.forEach(p => { p.isStart = p.sim >= cut; });
+      if (n === 1) { pageItems[0].isStart = true; return; }
 
-      // 完全沒有任何一頁達標（例如整批只有一份，沒有對照組）→ 退回「一個檔案一份」
-      if (!pageItems.some(p => p.isStart)) {
-        pageItems.forEach((p, i) => {
-          p.isStart = i === 0 || p.fileIdx !== pageItems[i - 1].fileIdx;
-        });
+      // 續頁種子 = 與第一頁最不像的那一頁
+      let seedB = 1, worst = Infinity;
+      for (let j = 1; j < n; j++) { const v = sim(0, j); if (v < worst) { worst = v; seedB = j; } }
+      pageItems.forEach(p => { p.simCut = worst; });
+
+      if (worst >= SPLIT_ONE_CLUSTER) {
+        // 整批只有一種版型 → 每頁各自一份（單頁版學習單）
+        pageItems.forEach(p => { p.isStart = true; });
+      } else {
+        for (let i = 0; i < n; i++) pageItems[i].isStart = sim(i, 0) >= sim(i, seedB);
       }
 
       // 不同檔案不會接續，每個檔案的第一頁一定是一份的開始
@@ -1493,7 +1493,7 @@
       document.getElementById('countNote').classList.remove('visible', 'over');
       [yearInput, termInput, countyInput, schoolInput, courseInput, instructorInput, audienceInput, likeInput, understandInput]
         .forEach(el => { el.value = ''; el.classList.remove('invalid'); });
-      likePositiveState = null; understandPositiveState = null;
+      likePositiveState = null; understandPositiveState = null; wantAgainState = null;
       updateScoreHints();
       analysis = null;
       hideResults(); hideError(); updateBtn();
@@ -1559,7 +1559,7 @@
                   mime: 'image/jpeg',
                   data: p.dataUrl.split(',')[1],
                   // 溫度計放大圖只在每份的首頁（題目所在頁）附上
-                  zoom: (pi === 0 && sheetVersion === 'xinchuangli') ? (p.zoom || null) : null,
+                  zoom: pi === 0 ? (p.zoom || null) : null,
                 });
               });
             });
@@ -1836,6 +1836,7 @@
       };
       const likeStr = scoreStr(likeInput.value, likeScaleState, likePositiveState);
       const understandStr = scoreStr(understandInput.value, understandScaleState, understandPositiveState);
+      const wantAgainStr = wantAgainState != null ? `${wantAgainState}%` : null;
 
       const bullets = getCheckedTexts(lists[audience]);
       const bulletsHtml = bullets.length
@@ -1976,6 +1977,7 @@
       understandScaleState = analysis.understandScale || 5;
       likePositiveState = analysis.likePositive != null ? analysis.likePositive : null;
       understandPositiveState = analysis.understandPositive != null ? analysis.understandPositive : null;
+      wantAgainState = analysis.wantAgainRate != null ? analysis.wantAgainRate : null;
       updateScoreHints();
       if (analysis.audience && !audienceInput.value.trim()) audienceInput.value = analysis.audience;
 
@@ -1983,14 +1985,16 @@
       const noteEl = document.getElementById('countNote');
       const parts = [];
       if (analysis.studentCount) parts.push(`本次共判讀 ${analysis.studentCount} 份學習單`);
+      const cfg = verCfg();
       const pct = (v) => (v != null ? `　→ 正向比例 ${v}%` : '');
-      if (analysis.likeCounts) {
-        parts.push('喜歡程度：' + ['超級喜歡','喜歡','還好','不太喜歡']
-          .map(k => `${k} ${Number(analysis.likeCounts[k]) || 0}`).join('・') + pct(analysis.likePositive));
-      }
-      if (analysis.understandCounts) {
-        parts.push('聽懂程度：' + ['全部聽懂','大部分聽懂','聽懂一點點','幾乎沒聽懂']
-          .map(k => `${k} ${Number(analysis.understandCounts[k]) || 0}`).join('・') + pct(analysis.understandPositive));
+      const line = (label, counts, map, p) => label + '：'
+        + Object.keys(map).map(k => `${k} ${Number(counts[k]) || 0}`).join('・') + pct(p);
+      if (analysis.likeCounts) parts.push(line(cfg.likeLabel, analysis.likeCounts, cfg.likeMap, analysis.likePositive));
+      if (analysis.understandCounts) parts.push(line(cfg.understandLabel, analysis.understandCounts, cfg.understandMap, analysis.understandPositive));
+      if (cfg.wantAgain && analysis.wantAgainCounts) {
+        parts.push(`下次還想聽：想 ${Number(analysis.wantAgainCounts['想']) || 0}`
+          + `・不想 ${Number(analysis.wantAgainCounts['不想']) || 0}`
+          + (analysis.wantAgainRate != null ? `　→ 想再上課 ${analysis.wantAgainRate}%` : ''));
       }
       const bad = analysis.likeMismatch || analysis.understandMismatch
         || (analysis.competencies || []).some(c => c.mismatch);
@@ -2060,6 +2064,34 @@
     const UNDERSTAND_TOP2 = ['全部聽懂', '大部分聽懂'];
     const COMP_TOP2 = ['很像我', '有點像我'];
 
+    // 舊版（超能力解鎖）：一樣是溫度計與圈選，但量表 5 級、選項文字不同
+    const LIKE_MAP_SP = { '非常喜歡': 5, '大部分都喜歡': 4, '普通喜歡': 3, '有點不喜歡': 2, '很不喜歡': 1 };
+    const UNDERSTAND_MAP_SP = { '非常了解': 5, '大部分了解': 4, '有一點了解': 3, '有點不了解': 2, '非常不了解': 1 };
+    const LIKE_OPTS_SP = [['非常喜歡','5 非常喜歡'], ['大部分都喜歡','4 大部分都喜歡'], ['普通喜歡','3 普通喜歡'], ['有點不喜歡','2 有點不喜歡'], ['很不喜歡','1 很不喜歡'], ['未作答','未作答']];
+    const UNDERSTAND_OPTS_SP = [['非常了解','5 非常了解'], ['大部分了解','4 大部分了解'], ['有一點了解','3 有一點了解'], ['有點不了解','2 有點不了解'], ['非常不了解','1 非常不了解'], ['未作答','未作答']];
+    const WANT_OPTS = ['想', '不想', '未作答'];
+    const LIKE_TOP2_SP = ['非常喜歡', '大部分都喜歡'];
+    const UNDERSTAND_TOP2_SP = ['非常了解', '大部分了解'];
+
+    // 兩版的量表設定（與後端 VERSIONS 對應）
+    const VER_CFG = {
+      xinchuangli: {
+        likeMap: LIKE_MAP, likeTop2: LIKE_TOP2, likeOpts: LIKE_OPTS, likeTop2Label: '超級喜歡＋喜歡',
+        understandMap: UNDERSTAND_MAP, understandTop2: UNDERSTAND_TOP2, understandOpts: UNDERSTAND_OPTS,
+        understandTop2Label: '全部聽懂＋大部分聽懂',
+        scale: 4, perStudentCompetency: true, wantAgain: false,
+        likeLabel: '喜歡程度', understandLabel: '聽懂程度', noteCol: '溫度計判讀依據',
+      },
+      superpower: {
+        likeMap: LIKE_MAP_SP, likeTop2: LIKE_TOP2_SP, likeOpts: LIKE_OPTS_SP, likeTop2Label: '非常喜歡＋大部分都喜歡',
+        understandMap: UNDERSTAND_MAP_SP, understandTop2: UNDERSTAND_TOP2_SP, understandOpts: UNDERSTAND_OPTS_SP,
+        understandTop2Label: '非常了解＋大部分了解',
+        scale: 5, perStudentCompetency: false, wantAgain: true,
+        likeLabel: '喜歡程度', understandLabel: '了解程度', noteCol: '判讀依據',
+      },
+    };
+    const verCfg = () => VER_CFG[resultVersion()];
+
     function avgOf(counts, map, topKeys) {
       let sum = 0, n = 0, top = 0;
       Object.entries(map).forEach(([opt, val]) => {
@@ -2076,12 +2108,13 @@
 
     // 分數旁的輔助說明：把分母和正向比例寫清楚，避免 3.3 被誤讀成 3.3/5
     function updateScoreHints() {
+      const cfg = verCfg();
       const line = (positive, topLabel) =>
         positive != null ? `正向比例 ${positive}%（${topLabel}）` : '';
       const lh = document.getElementById('likeHint');
       const uh = document.getElementById('understandHint');
-      if (lh) lh.textContent = line(likePositiveState, '超級喜歡＋喜歡');
-      if (uh) uh.textContent = line(understandPositiveState, '全部聽懂＋大部分聽懂');
+      if (lh) lh.textContent = line(likePositiveState, cfg.likeTop2Label);
+      if (uh) uh.textContent = line(understandPositiveState, cfg.understandTop2Label);
     }
 
     function sel(name, opts, current) {
@@ -2102,66 +2135,28 @@
       if (!rs.length) { wrap.classList.remove('visible'); return; }
       wrap.classList.add('visible');
 
-      // 舊版是數字評分、沒有逐生亮能自評，表格欄位完全不同
-      if (resultVersion() === 'superpower') return renderSheetReviewNumeric(rs);
-
+      const cfg = verCfg();
       const hasNote = rs.some(r => r.likeNote);
-      const head = `<tr><th>#</th><th>年級</th><th>喜歡程度</th><th>聽懂程度</th>`
-        + COMP_NAMES.map(n => `<th>${n.replace('力','')}</th>`).join('')
-        + (hasNote ? `<th>溫度計判讀依據</th>` : '') + `</tr>`;
+      const head = `<tr><th>#</th><th>年級</th><th>${cfg.likeLabel}</th><th>${cfg.understandLabel}</th>`
+        + (cfg.wantAgain ? `<th>下次還想聽</th>` : '')
+        + (cfg.perStudentCompetency ? COMP_NAMES.map(n => `<th>${n.replace('力','')}</th>`).join('') : '')
+        + (hasNote ? `<th>${cfg.noteCol}</th>` : '') + `</tr>`;
+
       const rows = rs.map((r, i) => {
         const comps = r.competencies || {};
         return `<tr data-row="${i}">`
           + `<td class="idx">${i + 1}</td>`
           + `<td>${escapeHtml(r.grade || '—')}</td>`
-          + `<td>${sel('like', LIKE_OPTS, r.like || '未作答')}</td>`
-          + `<td>${sel('understand', UNDERSTAND_OPTS, r.understand || '未作答')}</td>`
-          + COMP_NAMES.map(n => `<td>${sel('c:' + n, COMP_OPTS, comps[n] || '未作答')}</td>`).join('')
+          + `<td>${sel('like', cfg.likeOpts, r.like || '未作答')}</td>`
+          + `<td>${sel('understand', cfg.understandOpts, r.understand || '未作答')}</td>`
+          + (cfg.wantAgain ? `<td>${sel('wantAgain', WANT_OPTS, r.wantAgain || '未作答')}</td>` : '')
+          + (cfg.perStudentCompetency
+              ? COMP_NAMES.map(n => `<td>${sel('c:' + n, COMP_OPTS, comps[n] || '未作答')}</td>`).join('')
+              : '')
           + (hasNote ? `<td class="note">${escapeHtml(r.likeNote || '')}</td>` : '')
           + `</tr>`;
       }).join('');
       document.getElementById('sheetTable').innerHTML = head + rows;
-    }
-
-    // 舊版（超能力解鎖）：數字評分，欄位用數字輸入框
-    function renderSheetReviewNumeric(rs) {
-      const hasNote = rs.some(r => r.likeNote || r.understandNote);
-      const numCell = (field, val, max) =>
-        `<input type="number" class="sheet-num" data-field="${field}" step="0.5" min="0"`
-        + `${max ? ` max="${max}"` : ''} value="${val != null ? val : ''}" placeholder="—">`
-        + `${max ? `<span class="of-max"> / ${max}</span>` : ''}`;
-
-      const head = `<tr><th>#</th><th>年級</th><th>喜歡評分</th><th>理解評分</th>`
-        + (hasNote ? `<th>判讀依據</th>` : '') + `</tr>`;
-      const rows = rs.map((r, i) =>
-        `<tr data-row="${i}">`
-        + `<td class="idx">${i + 1}</td>`
-        + `<td>${escapeHtml(r.grade || '—')}</td>`
-        + `<td>${numCell('likeScore', r.likeScore, r.likeMax)}</td>`
-        + `<td>${numCell('understandScore', r.understandScore, r.understandMax)}</td>`
-        + (hasNote ? `<td class="note">${escapeHtml([r.likeNote, r.understandNote].filter(Boolean).join('／'))}</td>` : '')
-        + `</tr>`).join('');
-      document.getElementById('sheetTable').innerHTML = head + rows;
-    }
-
-    // 舊版的即時重算：平均數字評分
-    function recomputeNumeric() {
-      const rows = Array.from(document.querySelectorAll('#sheetTable tr[data-row]'));
-      if (!rows.length) return;
-      const pick = (f) => rows
-        .map(tr => tr.querySelector(`input[data-field="${f}"]`))
-        .map(el => (el && el.value.trim() !== '' ? Number(el.value) : null))
-        .filter(v => v != null && isFinite(v));
-      const avg = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : '');
-      likeInput.value = avg(pick('likeScore'));
-      understandInput.value = avg(pick('understandScore'));
-      // 舊版是連續分數，沒有「選項人數」可清點，也就沒有正向比例
-      likePositiveState = null; understandPositiveState = null;
-      updateScoreHints();
-      const noteEl = document.getElementById('countNote');
-      noteEl.innerHTML = `本次共判讀 ${rows.length} 份學習單`;
-      noteEl.classList.add('visible');
-      noteEl.classList.remove('over');
     }
 
     // 從表格讀回目前（可能已被修正的）逐份資料
@@ -2173,7 +2168,7 @@
         };
         const competencies = {};
         COMP_NAMES.forEach(n => { competencies[n] = get('c:' + n); });
-        return { like: get('like'), understand: get('understand'), competencies };
+        return { like: get('like'), understand: get('understand'), wantAgain: get('wantAgain'), competencies };
       });
     }
 
@@ -2182,20 +2177,26 @@
       const rs = readSheetReview();
       if (!rs.length) return;
 
-      const like = {}, understand = {}, comp = {};
+      const cfg = verCfg();
+      const like = {}, understand = {}, comp = {}, wantAgain = {};
       const bump = (o, k) => { if (k) o[k] = (o[k] || 0) + 1; };
       rs.forEach(r => {
-        bump(like, r.like); bump(understand, r.understand);
+        bump(like, r.like); bump(understand, r.understand); bump(wantAgain, r.wantAgain);
         Object.entries(r.competencies).forEach(([n, v]) => {
           comp[n] = comp[n] || {}; bump(comp[n], v);
         });
       });
 
-      const l = avgOf(like, LIKE_MAP, LIKE_TOP2), u = avgOf(understand, UNDERSTAND_MAP, UNDERSTAND_TOP2);
+      const l = avgOf(like, cfg.likeMap, cfg.likeTop2);
+      const u = avgOf(understand, cfg.understandMap, cfg.understandTop2);
       likeInput.value = l.score != null ? l.score : '';
       understandInput.value = u.score != null ? u.score : '';
-      likeScaleState = 4; understandScaleState = 4;
+      likeScaleState = cfg.scale; understandScaleState = cfg.scale;
       likePositiveState = l.positive; understandPositiveState = u.positive;
+      wantAgainState = (() => {
+        const yes = Number(wantAgain['想']) || 0, no = Number(wantAgain['不想']) || 0;
+        return yes + no ? Math.round(yes / (yes + no) * 100) : null;
+      })();
       updateScoreHints();
 
       // 就地更新各亮能的統計（保留勾選狀態與已編輯的說明文字）
@@ -2226,17 +2227,22 @@
         }
       });
 
-      updateCountNote(rs.length, like, understand);
+      updateCountNote(rs.length, like, understand, wantAgain);
     }
 
-    function updateCountNote(total, like, understand) {
+    function updateCountNote(total, like, understand, wantAgain) {
+      const cfg = verCfg();
       const noteEl = document.getElementById('countNote');
       const pct = (v) => (v != null ? `　→ 正向比例 ${v}%` : '');
+      const line = (label, counts, map, p) => label + '：'
+        + Object.keys(map).map(k => `${k} ${Number(counts[k]) || 0}`).join('・') + pct(p);
       const parts = [`本次共判讀 ${total} 份學習單`];
-      parts.push('喜歡程度：' + ['超級喜歡','喜歡','還好','不太喜歡']
-        .map(k => `${k} ${Number(like[k]) || 0}`).join('・') + pct(likePositiveState));
-      parts.push('聽懂程度：' + ['全部聽懂','大部分聽懂','聽懂一點點','幾乎沒聽懂']
-        .map(k => `${k} ${Number(understand[k]) || 0}`).join('・') + pct(understandPositiveState));
+      parts.push(line(cfg.likeLabel, like, cfg.likeMap, likePositiveState));
+      parts.push(line(cfg.understandLabel, understand, cfg.understandMap, understandPositiveState));
+      if (cfg.wantAgain && wantAgain) {
+        parts.push(`下次還想聽：想 ${Number(wantAgain['想']) || 0}・不想 ${Number(wantAgain['不想']) || 0}`
+          + (wantAgainState != null ? `　→ 想再上課 ${wantAgainState}%` : ''));
+      }
       noteEl.innerHTML = parts.join('<br>');
       noteEl.classList.add('visible');
       noteEl.classList.remove('over');
@@ -2249,11 +2255,10 @@
       body.classList.toggle('open');
     });
 
-    document.getElementById('sheetTable').addEventListener('input', (e) => {
-      if (e.target.tagName === 'SELECT' || e.target.classList.contains('sheet-num')) {
+    document.getElementById('sheetTable').addEventListener('change', (e) => {
+      if (e.target.tagName === 'SELECT') {
         e.target.classList.add('edited');
-        if (resultVersion() === 'superpower') recomputeNumeric();
-        else recomputeFromResponses();
+        recomputeFromResponses();
       }
     });
 

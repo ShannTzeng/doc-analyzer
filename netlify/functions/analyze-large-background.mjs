@@ -15,6 +15,27 @@ const LIKE_TOP2 = ['超級喜歡', '喜歡'];
 const UNDERSTAND_TOP2 = ['全部聽懂', '大部分聽懂'];
 const COMP_TOP2 = ['很像我', '有點像我'];
 
+// 舊版（超能力解鎖）：同樣是溫度計與圈選，但量表是 5 級，選項文字也不同
+const LIKE_MAP_SP = { '非常喜歡': 5, '大部分都喜歡': 4, '普通喜歡': 3, '有點不喜歡': 2, '很不喜歡': 1 };
+const UNDERSTAND_MAP_SP = { '非常了解': 5, '大部分了解': 4, '有一點了解': 3, '有點不了解': 2, '非常不了解': 1 };
+const LIKE_TOP2_SP = ['非常喜歡', '大部分都喜歡'];
+const UNDERSTAND_TOP2_SP = ['非常了解', '大部分了解'];
+
+// 兩個版本的量表設定。統計邏輯共用，只有對應表與滿分不同
+const VERSIONS = {
+  xinchuangli: {
+    likeMap: LIKE_MAP, likeTop2: LIKE_TOP2,
+    understandMap: UNDERSTAND_MAP, understandTop2: UNDERSTAND_TOP2,
+    scale: 4, perStudentCompetency: true, wantAgain: false,
+  },
+  superpower: {
+    likeMap: LIKE_MAP_SP, likeTop2: LIKE_TOP2_SP,
+    understandMap: UNDERSTAND_MAP_SP, understandTop2: UNDERSTAND_TOP2_SP,
+    scale: 5, perStudentCompetency: false, wantAgain: true,
+  },
+};
+const cfgFor = (v) => VERSIONS[v === 'superpower' ? 'superpower' : 'xinchuangli'];
+
 const COMPETENCY_DEFS = `- 覺察力：敏銳感受自我與環境變化（自我覺知、環境意識、美感素養）
 - 表達力：將內在想法、情緒或創意轉化為溝通、創作或行動（符號運用與溝通表達、透過創作表達）
 - 驅動力：建立穩定的內在支持，由內而外推動學習的內在動機
@@ -150,57 +171,113 @@ ${COMPETENCY_DEFS}
    與心創力版的差別：喜歡／理解是「數字評分」而非塗色或圈選臉譜，
    而且沒有每位學生的六大亮能自評（亮能改為課程層級，於合併階段產出）。
    ────────────────────────────────────────────────────────── */
-const SHEET_PROMPT_SUPERPOWER = `你是教育課程分析專家，正在判讀「一份」學生回饋單／學習單的掃描影像（超能力解鎖計畫版本）。
+const SHEET_PROMPT_SUPERPOWER = `你是教育課程分析專家，正在判讀「一份」學生回饋單的掃描影像（超能力解鎖計畫版本）。
 
-這次只會給你**一份**學習單。請專心把這一份讀清楚，不要做任何跨份統計、不要臆測其他學生的情況。
-
-學習單可能是「注音版」，國字旁邊會有注音符號（ㄅㄆㄇ）。請忽略注音、只讀國字與學生填答內容。
-
-══════════════════════════════════════
-★ 規則一：兩題評分
-══════════════════════════════════════
-這份回饋單上有兩題要學生打分數：
-1.「我喜歡這堂課嗎？」（或意思相同的題目）
-2.「課後我對這個主題的了解有幾分呢？」（或意思相同的題目）
-
-這兩題的作答方式**可能是圈選數字、打勾、塗格子、畫星星或在量尺上做記號**，版面不固定。
-請依實際看到的樣子判讀，並回報：
-- 分數本身（數字）
-- 這一題的**滿分**是多少（從印在紙上的選項範圍判斷，例如最大可選到 5 就填 5）
-
-⚠️ **務必先觀察再下結論。** 請先在 observation 欄用一句話描述你實際看到的作答記號
-（例如：「1 到 5 的數字中，5 被圈起來」、「五顆星塗滿四顆」），寫完觀察之後再填分數。
-
-若該題沒有作答或讀不出來，分數填 null，滿分仍盡量填（讀不到就填 null）。
-不要猜測分數。
+這次只會給你**一份**回饋單（通常 2 頁：第 1 頁是題目，第 2 頁是自由繪圖）。
+請專心把這一份讀清楚，不要做任何跨份統計、不要臆測其他學生的情況。
 
 ══════════════════════════════════════
-★ 規則二：去識別化與質性素材
+★ 規則一：心情溫度計（「我喜歡這堂課嗎？」）
 ══════════════════════════════════════
-- 去識別化：若出現學生姓名，務必處理成「王○○」這種形式，切勿呈現完整姓名。
-- 學生的開放式填答（手寫的感想、最喜歡的部分、想說的話等）是最重要的質性素材。
-  請**原話引用**（去識別化後），不要改寫成評語或總結。
+這一題**不是圈選題，而是請學生把溫度計「塗一塗」**。
+
+溫度計下方是圓球，上方是直管。管子上有**四條刻度線**，
+每一條各自對齊右邊的一個選項，由上而下是：
+
+        ╷ ← 管子頂端（比第1條刻度還高）
+    ────┤ 第1條刻度　←→　5 非常喜歡
+    ────┤ 第2條刻度　←→　4 大部分都喜歡
+    ────┤ 第3條刻度　←→　3 普通喜歡
+    ────┤ 第4條刻度　←→　2 有點不喜歡
+       ◯  圓球　　　←→　1 很不喜歡
+
+四條刻度線**彼此間距相等**。以下把「相鄰兩條刻度線之間的距離」稱為**一格**。
+
+判讀方式：先找出塗色的**最高點**，再和下面四條「判定線」比較，
+由上往下，第一個「最高點有到達」的就是答案：
+
+┌─ 判定線 A ＝ 第2條刻度往上 **0.4 格** → 「**非常喜歡**」（5 分）
+├─ 判定線 B ＝ 第3條刻度往上 **0.4 格** → 「**大部分都喜歡**」（4 分）
+├─ 判定線 C ＝ 第4條刻度往上 **0.4 格** → 「**普通喜歡**」（3 分）
+├─ 判定線 D ＝「圓球最底部 → 第4條刻度」這段距離的 **80% 高度**
+│     （也就是比第4條刻度再低一點點）→ 「**有點不喜歡**」（2 分）
+└─ 以上都沒到（例如只塗圓球）→ 「**很不喜歡**」（1 分）
+　　完全沒有塗色 →「未作答」
+
+「往上 0.4 格」怎麼看：兩條刻度線之間的距離取四成，**略低於兩條刻度的中點**。
+塗色只要明顯高過某一條刻度、而且已經走完往上一條刻度路程的將近一半，就算升一級，
+**不必真的碰到上面那條刻度**。
+
+⚠️⚠️ 以下是最容易判錯的地方：
+
+**錯誤一（最常見）：用「塗色落在哪兩條刻度之間」來命名答案。這是錯的。**
+要比的是最高點和「判定線」，不是塗色落在哪一區間。
+若用區間去想，很容易整個往下少算一級，請特別警惕。
+
+**錯誤二：以為學生一定從圓球開始往上塗。**
+很多學生只塗中間某一段，圓球和下半截是空白的。一樣只看最高點。
+
+**錯誤三：忽略很淡的塗色。**
+鉛筆、淺色筆、**斜線陰影**、沒塗滿的筆觸都算有塗，請一併算進最高點。
+這份回饋單常見用鉛筆打斜線，顏色很淡但確實是作答。
+
+**錯誤四：因為不確定就刻意往低判。** 不要保守，照判定線據實判斷。
+
+⚠️ 請先在 like_observation 用一句話描述你實際看到的塗色狀況，
+並**明確說出最高點位在第幾條刻度的上方或下方、大約幾格**
+（例如：「紫色從圓球一路塗到管子頂端，最高點在第1條刻度上方」、
+「鉛筆斜線塗在第2條刻度到管頂之間，最高點在第1條刻度上方」），
+寫完觀察之後再依判定線填入 like。
+
+══════════════════════════════════════
+★ 規則二：課後了解程度（圈選題）
+══════════════════════════════════════
+「課後我對這個主題的了解有幾分呢？」下方有**五個圓圈**，由上而下是：
+5 非常了解 / 4 大部分了解 / 3 有一點了解 / 2 有點不了解 / 1 非常不了解
+
+學生會在其中一個圓圈打勾、畫叉或塗滿。請判讀**被標記的是哪一個**。
+若記號橫跨兩個，以涵蓋較多的那個為準。沒有任何記號 →「未作答」。
+請先在 understand_observation 簡述看到的記號位置，再填 understand。
+
+══════════════════════════════════════
+★ 規則三：下次還想再聽嗎（圈選題）
+══════════════════════════════════════
+「下次還想再聽到這個主題的課程嗎？」有兩個圈圈：**想** 與 **不想**，學生在其中一個打勾。
+判讀打勾的是哪一個，填入 want_again（想 / 不想 / 未作答）。
+下方「原因：」欄的手寫內容填入 want_again_reason（原話引用，去識別化；空白填 ""）。
+
+══════════════════════════════════════
+★ 規則四：去識別化與質性素材
+══════════════════════════════════════
+- 這份回饋單上有「名字」欄。**務必去識別化**，處理成「郭○○」這種形式，切勿呈現完整姓名。
+- 開放式填答是最重要的質性素材，請**原話引用**（去識別化後），不要改寫成評語：
+  「這堂課讓我感到最有成就感的地方？」
+  「我覺得上課的內容可以運用在生活的哪些地方呢？」
+  「記錄下這次的課程吧！我還想告訴老師…」（第 2 頁）
   讀不出來的字可用「□」代替，不要猜。
+- 「今天的課程主題是____」填入 topic。
 
 ══════════════════════════════════════
 只回覆下列 JSON，不要加任何其他文字：
 {
-  "grade": "三年級",
-  "like_observation": "1 到 5 的數字中，5 被圈起來",
-  "like_score": 5,
-  "like_max": 5,
-  "understand_observation": "1 到 5 的數字中，4 被圈起來",
-  "understand_score": 4,
-  "understand_max": 5,
+  "grade": "二甲",
+  "topic": "聽覺課",
+  "like_observation": "紫色從圓球一路塗到管子頂端，最高點在第1條刻度上方",
+  "like": "非常喜歡",
+  "understand_observation": "最上面『5 非常了解』的圓圈被打勾",
+  "understand": "非常了解",
+  "want_again": "想",
+  "want_again_reason": "很好玩",
   "quotes": ["學生手寫原話（去識別化）"],
-  "highlights": ["這份學習單最值得注意的 1～3 件事"],
-  "illustration": {"page": 2, "reason": "畫了細緻的場景並標註說明"}
+  "highlights": ["這份回饋單最值得注意的 1～3 件事"],
+  "illustration": {"page": 2, "reason": "畫了放射狀的心智圖並加上人物"}
 }
 
 欄位規定：
-- grade：讀學習單上的年級，讀不到填 ""。
-- like_score / understand_score：數字；沒作答或讀不出來填 null。
-- like_max / understand_max：該題滿分；讀不出來填 null。
+- like 必須正好是：非常喜歡 / 大部分都喜歡 / 普通喜歡 / 有點不喜歡 / 很不喜歡 / 未作答
+- understand 必須正好是：非常了解 / 大部分了解 / 有一點了解 / 有點不了解 / 非常不了解 / 未作答
+- want_again 必須正好是：想 / 不想 / 未作答
+- 讀不到或沒作答一律填「未作答」，不要猜測。
 - illustration：若本份有值得放進報告的精彩繪圖或填答，填該頁頁碼（從 1 起算）；否則填 null。`;
 
 /* ──────────────────────────────────────────────────────────
@@ -424,45 +501,6 @@ function normalizeCompetencyName(raw) {
   return null;
 }
 
-// 舊版（超能力解鎖）：每份是數字評分，直接平均。滿分取各份回報中最常見的值
-function numericStats(responses, field) {
-  const vals = [], maxes = [];
-  responses.forEach((r) => {
-    const v = r[field + 'Score'];
-    const m = r[field + 'Max'];
-    if (typeof v === 'number' && isFinite(v)) vals.push(v);
-    if (typeof m === 'number' && isFinite(m) && m > 0) maxes.push(m);
-  });
-  let scale = null;
-  if (maxes.length) {
-    const tally = {};
-    maxes.forEach((m) => { tally[m] = (tally[m] || 0) + 1; });
-    scale = Number(Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0]);
-  }
-  return {
-    score: vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null,
-    n: vals.length,
-    scale,
-  };
-}
-
-// 舊版的逐份紀錄：數字評分，欄位正規化
-function cleanNumericResponses(arr) {
-  if (!Array.isArray(arr)) return [];
-  const str = (v) => (typeof v === 'string' ? v.trim() : '');
-  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
-  return arr.map((r, i) => ({
-    file: Number.isInteger(r && r.file) && r.file > 0 ? r.file : i + 1,
-    grade: str(r && r.grade),
-    likeScore: num(r && (r.likeScore !== undefined ? r.likeScore : r.like_score)),
-    likeMax: num(r && (r.likeMax !== undefined ? r.likeMax : r.like_max)),
-    likeNote: str(r && (r.likeNote || r.like_observation)),
-    understandScore: num(r && (r.understandScore !== undefined ? r.understandScore : r.understand_score)),
-    understandMax: num(r && (r.understandMax !== undefined ? r.understandMax : r.understand_max)),
-    understandNote: str(r && (r.understandNote || r.understand_observation)),
-  }));
-}
-
 // 整理「逐份紀錄」：每份學習單一筆，欄位正規化
 function cleanResponses(arr) {
   if (!Array.isArray(arr)) return [];
@@ -482,6 +520,8 @@ function cleanResponses(arr) {
       likeNote: str(r && (r.likeNote || r.like_observation)),
       understand: str(r && r.understand),
       understandNote: str(r && (r.understandNote || r.understand_observation)),
+      wantAgain: str(r && (r.wantAgain || r.want_again)),
+      wantAgainReason: str(r && (r.wantAgainReason || r.want_again_reason)),
       competencies: comps,
     };
   });
@@ -489,20 +529,22 @@ function cleanResponses(arr) {
 
 // 由逐份紀錄統計各選項人數。Claude 只負責逐份判讀，統計一律由程式完成
 function tallyResponses(responses) {
-  const like = {}, understand = {}, comp = {};
+  const like = {}, understand = {}, comp = {}, wantAgain = {};
   const bump = (obj, key) => { if (key) obj[key] = (obj[key] || 0) + 1; };
   responses.forEach((r) => {
     bump(like, r.like);
     bump(understand, r.understand);
+    bump(wantAgain, r.wantAgain);
     Object.entries(r.competencies || {}).forEach(([name, val]) => {
       comp[name] = comp[name] || {};
       bump(comp[name], val);
     });
   });
-  return { like, understand, comp };
+  return { like, understand, comp, wantAgain };
 }
 
 function normalizeResult(parsed, version) {
+  const cfg = cfgFor(version);
   const num = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v * 10) / 10 : null);
   const pageRe = /[（(][^（()）]*(?:頁|页|page|p\.?)[^（()）]*\d[^（()）]*[)）]\s*$/i;
   const cleanItems = (arr) => (Array.isArray(arr) ? arr.map((it) => {
@@ -525,35 +567,6 @@ function normalizeResult(parsed, version) {
     return { text, page, file };
   }).filter((x) => x && x.text) : []);
 
-  // 舊版（超能力解鎖）：數字評分，平均一樣由程式算，亮能則是課程層級、沒有統計
-  if (version === 'superpower') {
-    const responses = cleanNumericResponses(parsed.responses);
-    const like = numericStats(responses, 'like');
-    const understand = numericStats(responses, 'understand');
-    const competencies = Array.isArray(parsed.competencies)
-      ? parsed.competencies
-          .map((c) => ({
-            name: normalizeCompetencyName(c && c.name),
-            evidence: c && typeof c.evidence === 'string' ? c.evidence.trim() : '',
-          }))
-          .filter((c) => c.name)
-      : [];
-    return {
-      version,
-      responses,
-      studentCount: responses.length || null,
-      likeScore: like.score, likeScale: like.scale, likeCounts: null, likePositive: null, likeMismatch: false,
-      understandScore: understand.score, understandScale: understand.scale,
-      understandCounts: null, understandPositive: null, understandMismatch: false,
-      audience: typeof parsed.audience === 'string' ? parsed.audience.trim() : '',
-      foundation: cleanItems(parsed.foundation),
-      school: cleanItems(parsed.school),
-      instructor: cleanItems(parsed.instructor),
-      competencies,
-      illustrations: normalizeIllustrations(parsed),
-    };
-  }
-
   // 逐份紀錄是統計的唯一依據；舊格式（模型自報 counts）仍保留為後備
   const responses = cleanResponses(parsed.responses);
   const tallied = responses.length ? tallyResponses(responses) : null;
@@ -572,7 +585,15 @@ function normalizeResult(parsed, version) {
   }
 
   let competencies;
-  if (tallied) {
+  if (!cfg.perStudentCompetency) {
+    // 舊版的亮能是課程層級（只列有達成的），沒有人數與平均
+    competencies = VALID_COMPETENCIES
+      .filter((name) => evidenceByName[name])
+      .map((name) => ({
+        name, evidence: evidenceByName[name],
+        avg: null, n: null, positive: null, excluded: null, counts: null, mismatch: false,
+      }));
+  } else if (tallied) {
     competencies = VALID_COMPETENCIES
       .filter((name) => tallied.comp[name])
       .map((name) => {
@@ -612,25 +633,35 @@ function normalizeResult(parsed, version) {
       : [];
   }
 
-  const likeStats = statsFromCounts(likeSrc, LIKE_MAP);
-  const understandStats = statsFromCounts(understandSrc, UNDERSTAND_MAP);
-  const likeCounted = totalCounted(likeSrc, LIKE_MAP, ['未作答']);
-  const understandCounted = totalCounted(understandSrc, UNDERSTAND_MAP, ['未作答']);
+  const likeStats = statsFromCounts(likeSrc, cfg.likeMap);
+  const understandStats = statsFromCounts(understandSrc, cfg.understandMap);
+  const likeCounted = totalCounted(likeSrc, cfg.likeMap, ['未作答']);
+  const understandCounted = totalCounted(understandSrc, cfg.understandMap, ['未作答']);
+
+  // 舊版多一題「下次還想再聽嗎」，以「想」佔有效作答的比例呈現
+  const wantAgainCounts = tallied && cfg.wantAgain ? tallied.wantAgain : null;
+  let wantAgainRate = null;
+  if (wantAgainCounts) {
+    const yes = toCount(wantAgainCounts['想']);
+    const no = toCount(wantAgainCounts['不想']);
+    if (yes + no > 0) wantAgainRate = Math.round((yes / (yes + no)) * 100);
+  }
 
   return {
     version: version || 'xinchuangli',
     responses,
     studentCount,
     likeScore: likeStats.score != null ? likeStats.score : num(parsed.likeScore),
-    likeScale: likeStats.score != null ? 4 : (num(parsed.likeScale) || 5),
+    likeScale: likeStats.score != null ? cfg.scale : (num(parsed.likeScale) || 5),
     likeCounts: likeSrc && typeof likeSrc === 'object' ? likeSrc : null,
-    likePositive: positiveRate(likeSrc, LIKE_MAP, LIKE_TOP2),
+    likePositive: positiveRate(likeSrc, cfg.likeMap, cfg.likeTop2),
     likeMismatch: !tallied && !!(studentCount && likeCounted && likeCounted !== studentCount),
     understandScore: understandStats.score != null ? understandStats.score : num(parsed.understandScore),
-    understandScale: understandStats.score != null ? 4 : (num(parsed.understandScale) || 5),
+    understandScale: understandStats.score != null ? cfg.scale : (num(parsed.understandScale) || 5),
     understandCounts: understandSrc && typeof understandSrc === 'object' ? understandSrc : null,
-    understandPositive: positiveRate(understandSrc, UNDERSTAND_MAP, UNDERSTAND_TOP2),
+    understandPositive: positiveRate(understandSrc, cfg.understandMap, cfg.understandTop2),
     understandMismatch: !tallied && !!(studentCount && understandCounted && understandCounted !== studentCount),
+    wantAgainCounts, wantAgainRate,
     audience: typeof parsed.audience === 'string' ? parsed.audience.trim() : '',
     foundation: cleanItems(parsed.foundation),
     school: cleanItems(parsed.school),
@@ -813,27 +844,25 @@ async function analyzeSheets(apiKey, sheets, store, jobId, version) {
     : [];
   const reads = [first, ...rest];
 
-  // 逐份紀錄（統計的唯一依據）
-  const responses = reads.map((r, i) => (version === 'superpower'
-    ? {
-      file: sheets[i].file,
-      grade: (r && r.grade) || '',
-      like_score: r && typeof r.like_score === 'number' ? r.like_score : null,
-      like_max: r && typeof r.like_max === 'number' ? r.like_max : null,
-      like_observation: (r && r.like_observation) || '',
-      understand_score: r && typeof r.understand_score === 'number' ? r.understand_score : null,
-      understand_max: r && typeof r.understand_max === 'number' ? r.understand_max : null,
-      understand_observation: (r && r.understand_observation) || '',
-    }
-    : {
+  // 逐份紀錄（統計的唯一依據）。兩版都是離散選項，只是選項文字與級距不同
+  const responses = reads.map((r, i) => {
+    const base = {
       file: sheets[i].file,
       grade: (r && r.grade) || '',
       like: (r && r.like) || '未作答',
       like_observation: (r && r.like_observation) || '',
       understand: (r && r.understand) || '未作答',
       understand_observation: (r && r.understand_observation) || '',
-      competencies: (r && r.competencies) || {},
-    }));
+    };
+    if (version === 'superpower') {
+      return {
+        ...base,
+        want_again: (r && r.want_again) || '未作答',
+        want_again_reason: (r && r.want_again_reason) || '',
+      };
+    }
+    return { ...base, competencies: (r && r.competencies) || {} };
+  });
 
   const failed = reads.filter((r) => r && r.__failed).length;
 
@@ -846,7 +875,14 @@ async function analyzeSheets(apiKey, sheets, store, jobId, version) {
       highlights: Array.isArray(r && r.highlights) ? r.highlights.filter((h) => typeof h === 'string' && h.trim()) : [],
     };
     if (version === 'superpower') {
-      return { ...base, like: r && r.like_score, understand: r && r.understand_score };
+      return {
+        ...base,
+        like: (r && r.like) || '未作答',
+        understand: (r && r.understand) || '未作答',
+        want_again: (r && r.want_again) || '未作答',
+        want_again_reason: (r && r.want_again_reason) || '',
+        topic: (r && r.topic) || '',
+      };
     }
     return {
       ...base,
@@ -931,6 +967,9 @@ export default async (req) => {
         聽懂程度: { 平均: base.understandScore, 滿分: base.understandScale, 正向比例: base.understandPositive, 各選項人數: base.understandCounts },
         六大亮能: base.competencies.map((c) => ({ 名稱: c.name, 平均: c.avg, 有效樣本: c.n, 正向比例: c.positive })),
       };
+      if (base.wantAgainRate != null) {
+        stats['下次還想再聽'] = { 想要比例: base.wantAgainRate, 各選項人數: base.wantAgainCounts };
+      }
 
       let merged = {};
       try {
