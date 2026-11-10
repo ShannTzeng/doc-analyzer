@@ -865,6 +865,8 @@ async function analyzeSheets(apiKey, sheets, store, jobId, version) {
   });
 
   const failed = reads.filter((r) => r && r.__failed).length;
+  // 保留第一個失敗的原始錯誤：全部失敗時要把它呈現給使用者，而不是默默列為未作答
+  const firstError = (reads.find((r) => r && r.__failed) || {}).__error || '';
 
   // 彙整質性素材，交給純文字的合併呼叫
   const digest = reads.map((r, i) => {
@@ -905,7 +907,7 @@ async function analyzeSheets(apiKey, sheets, store, jobId, version) {
     }
   });
 
-  return { responses, digest, illustrations: illustrations.slice(0, 3), failed };
+  return { responses, digest, illustrations: illustrations.slice(0, 3), failed, firstError };
 }
 
 // 純文字的合併呼叫：不含任何影像，成本極低
@@ -957,7 +959,20 @@ export default async (req) => {
       }
 
       const version = body.version === 'superpower' ? 'superpower' : 'xinchuangli';
-      const { responses, digest, illustrations, failed } = await analyzeSheets(apiKey, sheets, store, jobId, version);
+      const { responses, digest, illustrations, failed, firstError } = await analyzeSheets(apiKey, sheets, store, jobId, version);
+
+      // 每一份都失敗 → 不是判讀問題，而是 API 本身掛了（金鑰無效、額度不足、速率限制…）。
+      // 直接把原始錯誤回報出去，讓使用者看得到原因，不要給一份全空的結果
+      if (failed === sheets.length) {
+        await store.setJSON(jobId, {
+          status: 'error',
+          error: `所有 ${sheets.length} 份都無法送出分析，請檢查 API 金鑰與額度。原始錯誤：${firstError || '未知'}`,
+        });
+        for (let i = 0; i < body.chunks; i++) {
+          try { await getStore('upload-staging').delete(`${jobId}/${i}`); } catch (_) {}
+        }
+        return new Response('ok');
+      }
 
       // 先用程式算好統計，再把數字交給合併呼叫引用
       const base = normalizeResult({ responses, competencies: [] }, version);
