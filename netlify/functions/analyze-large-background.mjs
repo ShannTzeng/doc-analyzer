@@ -1,8 +1,13 @@
 import { getStore } from '@netlify/blobs';
 
 const MODEL = 'claude-sonnet-4-6';
-// 同時進行的逐份判讀數。太高會撞速率限制，太低會拖慢整體
-const SHEET_CONCURRENCY = 4;
+// 同時進行的逐份判讀數。新建的 Console 組織速率限制很低（Tier 1），
+// 同時送太多會一直撞 429；3 份是實測下穩定的值
+const SHEET_CONCURRENCY = 3;
+// 單次 API 請求的逾時。沒有逾時的話，一個卡住的連線會讓整批永遠停在「13 / 15」
+const API_TIMEOUT_MS = 120000;
+// 撞到 429（速率限制）或 5xx／逾時 時的重試次數與等待
+const API_MAX_ATTEMPTS = 4;
 
 const VALID_COMPETENCIES = ['覺察力', '表達力', '驅動力', '合作力', '探索力', '實踐力'];
 
@@ -712,23 +717,60 @@ async function callClaude(apiKey, { system, content, maxTokens }) {
     body.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
   }
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    const err = new Error(e.name === 'AbortError'
+      ? `API 逾時（超過 ${API_TIMEOUT_MS / 1000} 秒沒有回應）`
+      : `API 連線失敗：${e.message}`);
+    err.retryable = true;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   const data = await res.json();
   if (!res.ok) {
     const err = new Error(`API錯誤 ${res.status}: ${data?.error?.message || '未知錯誤'}`);
     err.status = res.status;
+    // 429（速率限制）、529（過載）與 5xx 都值得等一下再試；4xx 其他錯誤重試也沒用
+    err.retryable = res.status === 429 || res.status >= 500;
+    // 伺服器若有指定等待秒數就照它的
+    const ra = Number(res.headers.get('retry-after'));
+    if (Number.isFinite(ra) && ra > 0) err.retryAfterMs = Math.min(ra * 1000, 60000);
     throw err;
   }
   return data;
+}
+
+// 帶退避的重試：429／5xx／逾時 才重試，等待時間逐次加倍（或依 retry-after）
+async function callClaudeWithRetry(apiKey, params, label) {
+  let lastErr;
+  for (let attempt = 1; attempt <= API_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await callClaude(apiKey, params);
+    } catch (e) {
+      lastErr = e;
+      const canRetry = e.retryable && attempt < API_MAX_ATTEMPTS;
+      console.error(`${label} 失敗（第 ${attempt} 次）: ${e.message}${canRetry ? '，將重試' : ''}`);
+      if (!canRetry) break;
+      const wait = e.retryAfterMs || Math.min(3000 * 2 ** (attempt - 1), 30000);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
 }
 
 function parseJsonReply(data) {
@@ -814,16 +856,12 @@ async function readOneSheet(apiKey, sheet, index, version) {
 
   const system = version === 'superpower' ? SHEET_PROMPT_SUPERPOWER : SHEET_PROMPT_XINCHUANGLI;
 
-  // 單份失敗時重試一次，仍失敗則回傳空白紀錄，讓份數與統計維持對齊
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const data = await callClaude(apiKey, { system, content, maxTokens: 3072 });
-      return parseJsonReply(data);
-    } catch (e) {
-      console.error(`第 ${index + 1} 份判讀失敗（第 ${attempt + 1} 次）:`, e.message);
-      if (attempt === 1) return { __failed: true, __error: e.message };
-      await new Promise((r) => setTimeout(r, 1500));
-    }
+  // 速率限制、過載、逾時都會自動退避重試；仍失敗則回傳空白紀錄，讓份數與統計維持對齊
+  try {
+    const data = await callClaudeWithRetry(apiKey, { system, content, maxTokens: 3072 }, `第 ${index + 1} 份判讀`);
+    return parseJsonReply(data);
+  } catch (e) {
+    return { __failed: true, __error: e.message };
   }
 }
 
@@ -922,7 +960,7 @@ async function mergeSheets(apiKey, digest, stats, version) {
     type: 'text',
     text: `${prompt}\n\n以下是資料：\n${JSON.stringify(payload, null, 1)}`,
   }];
-  const data = await callClaude(apiKey, { content, maxTokens: 4096 });
+  const data = await callClaudeWithRetry(apiKey, { content, maxTokens: 4096 }, '合併分析');
   return parseJsonReply(data);
 }
 
@@ -1138,7 +1176,7 @@ export default async (req) => {
     // 上傳模式已在上方附加指令，這裡只處理雲端連結模式
     if (driveUrls.length) messageContent.push({ type: 'text', text: mergedPrompt });
 
-    const data = await callClaude(apiKey, { content: messageContent, maxTokens: 8192 });
+    const data = await callClaudeWithRetry(apiKey, { content: messageContent, maxTokens: 8192 }, '合併判讀');
     const parsed = parseJsonReply(data);
     const result = normalizeResult(parsed);
     await store.setJSON(jobId, { status: 'done', ...result });

@@ -1591,7 +1591,7 @@
             });
 
             await new Promise(r => setTimeout(r, 3000));
-            result = await pollJobResult(jobId, 600, sheets.length);
+            result = await pollJobResult(jobId, 870, sheets.length);
           }
 
         } else {
@@ -1730,6 +1730,7 @@
     async function pollJobResult(jobId, maxSeconds, sheetTotal) {
       const interval = 5000;
       const maxAttempts = Math.ceil((maxSeconds * 1000) / interval);
+      let lastDone = null;   // 逾時時用來告訴使用者停在哪一步
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise(r => setTimeout(r, interval));
         try {
@@ -1743,6 +1744,7 @@
           if (data.status === 'error') throw new Error(data.error || '分析失敗，請重試');
           // 逐份判讀會回報進度，讓使用者知道還要等多久
           if (sheetTotal && Number.isInteger(data.done)) {
+            lastDone = data.done;
             loadingMsg.textContent = data.done >= sheetTotal
               ? '判讀完成，正在彙整三份報告重點⋯'
               : `正在逐份判讀⋯（${data.done} / ${sheetTotal} 份）`;
@@ -1752,7 +1754,10 @@
           throw e;
         }
       }
-      throw new Error('分析逾時，請稍後再試或換個檔案');
+      throw new Error(
+        (sheetTotal && lastDone != null ? `分析逾時（停在 ${lastDone} / ${sheetTotal} 份）。` : '分析逾時。')
+        + '可能是 API 速率限制或連線不穩，請稍等一兩分鐘再試一次；若持續發生請把這則訊息回報。'
+      );
     }
 
     // Report generation — 三個對象各自一份
